@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html>
+<head><meta name="generator" content="Hexo 3.8.0">
+    <!-- so meta -->
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="HandheldFriendly" content="True">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <meta name="description" content="一个独立的Rust可执行二进制文件创建我们自己的操作系统内核的第一步是创建一个不链接到Rust标准库的Rust可执行文件。这将会让我们能在没有操作系统支持的情况下在裸机上运行Rust代码。 简介想要编写一个操作系统内核的话，我们需要让我们的代码不依赖任何操作系统的特性。这意味着我们不能使用线程、文件、堆内存、网络、随机数^1、标准输出或者任何其他要求操作系统抽象或者特定硬件的特性。这合乎情理，因为">
+<meta name="keywords" content="Bare Bones">
+<meta property="og:type" content="article">
+<meta property="og:title" content="一个独立的Rust可执行二进制文件">
+<meta property="og:url" content="http://yoursite.com/2018/02/10/一个独立的Rust可执行二进制文件/index.html">
+<meta property="og:site_name" content="用Rust编写一个操作系统">
+<meta property="og:description" content="一个独立的Rust可执行二进制文件创建我们自己的操作系统内核的第一步是创建一个不链接到Rust标准库的Rust可执行文件。这将会让我们能在没有操作系统支持的情况下在裸机上运行Rust代码。 简介想要编写一个操作系统内核的话，我们需要让我们的代码不依赖任何操作系统的特性。这意味着我们不能使用线程、文件、堆内存、网络、随机数^1、标准输出或者任何其他要求操作系统抽象或者特定硬件的特性。这合乎情理，因为">
+<meta property="og:locale" content="default">
+<meta property="og:updated_time" content="2018-10-27T14:15:24.363Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="一个独立的Rust可执行二进制文件">
+<meta name="twitter:description" content="一个独立的Rust可执行二进制文件创建我们自己的操作系统内核的第一步是创建一个不链接到Rust标准库的Rust可执行文件。这将会让我们能在没有操作系统支持的情况下在裸机上运行Rust代码。 简介想要编写一个操作系统内核的话，我们需要让我们的代码不依赖任何操作系统的特性。这意味着我们不能使用线程、文件、堆内存、网络、随机数^1、标准输出或者任何其他要求操作系统抽象或者特定硬件的特性。这合乎情理，因为">
+    
+    
+        
+          
+              <link rel="shortcut icon" href="/images/favicon.ico">
+          
+        
+        
+          
+            <link rel="icon" type="image/png" href="/images/favicon-192x192.png" sizes="192x192">
+          
+        
+        
+          
+            <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon.png">
+          
+        
+    
+    <!-- title -->
+    <title>一个独立的Rust可执行二进制文件</title>
+    <!-- styles -->
+    <link rel="stylesheet" href="/css/style.css">
+    <!-- persian styles -->
+    
+      <link rel="stylesheet" href="/css/rtl.css">
+    
+    <!-- rss -->
+    
+    
+</head>
+
+<body class="max-width mx-auto px3 ltr">
+    
+      <div id="header-post">
+  <a id="menu-icon" href="#"><i class="fas fa-bars fa-lg"></i></a>
+  <a id="menu-icon-tablet" href="#"><i class="fas fa-bars fa-lg"></i></a>
+  <a id="top-icon-tablet" href="#" onclick="$('html, body').animate({ scrollTop: 0 }, 'fast');" style="display:none;"><i class="fas fa-chevron-up fa-lg"></i></a>
+  <span id="menu">
+    <span id="nav">
+      <ul>
+         
+          <li><a href="/">Home</a></li>
+         
+          <li><a href="/about/">About</a></li>
+         
+          <li><a href="/archives/">Writing</a></li>
+         
+          <li><a href="/projects_url">Projects</a></li>
+        
+      </ul>
+    </span>
+    <br>
+    <span id="actions">
+      <ul>
+        
+        
+        <li><a class="icon" href="#" onclick="$('html, body').animate({ scrollTop: 0 }, 'fast');"><i class="fas fa-chevron-up" aria-hidden="true" onmouseover="$('#i-top').toggle();" onmouseout="$('#i-top').toggle();"></i></a></li>
+        <li><a class="icon" href="#"><i class="fas fa-share-alt" aria-hidden="true" onmouseover="$('#i-share').toggle();" onmouseout="$('#i-share').toggle();" onclick="$('#share').toggle();return false;"></i></a></li>
+      </ul>
+      <span id="i-prev" class="info" style="display:none;">Previous post</span>
+      <span id="i-next" class="info" style="display:none;">Next post</span>
+      <span id="i-top" class="info" style="display:none;">Back to top</span>
+      <span id="i-share" class="info" style="display:none;">Share post</span>
+    </span>
+    <br>
+    <div id="share" style="display: none">
+      <ul>
+  <li><a class="icon" href="http://www.facebook.com/sharer.php?u=http://yoursite.com/2018/02/10/一个独立的Rust可执行二进制文件/"><i class="fab fa-facebook " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="https://twitter.com/share?url=http://yoursite.com/2018/02/10/一个独立的Rust可执行二进制文件/&text=一个独立的Rust可执行二进制文件"><i class="fab fa-twitter " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://www.linkedin.com/shareArticle?url=http://yoursite.com/2018/02/10/一个独立的Rust可执行二进制文件/&title=一个独立的Rust可执行二进制文件"><i class="fab fa-linkedin " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="https://pinterest.com/pin/create/bookmarklet/?url=http://yoursite.com/2018/02/10/一个独立的Rust可执行二进制文件/&is_video=false&description=一个独立的Rust可执行二进制文件"><i class="fab fa-pinterest " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="mailto:?subject=一个独立的Rust可执行二进制文件&body=Check out this article: http://yoursite.com/2018/02/10/一个独立的Rust可执行二进制文件/"><i class="fas fa-envelope " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="https://getpocket.com/save?url=http://yoursite.com/2018/02/10/一个独立的Rust可执行二进制文件/&title=一个独立的Rust可执行二进制文件"><i class="fab fa-get-pocket " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://reddit.com/submit?url=http://yoursite.com/2018/02/10/一个独立的Rust可执行二进制文件/&title=一个独立的Rust可执行二进制文件"><i class="fab fa-reddit " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://www.stumbleupon.com/submit?url=http://yoursite.com/2018/02/10/一个独立的Rust可执行二进制文件/&title=一个独立的Rust可执行二进制文件"><i class="fab fa-stumbleupon " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://digg.com/submit?url=http://yoursite.com/2018/02/10/一个独立的Rust可执行二进制文件/&title=一个独立的Rust可执行二进制文件"><i class="fab fa-digg " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://www.tumblr.com/share/link?url=http://yoursite.com/2018/02/10/一个独立的Rust可执行二进制文件/&name=一个独立的Rust可执行二进制文件&description="><i class="fab fa-tumblr " aria-hidden="true"></i></a></li>
+</ul>
+
+    </div>
+    <div id="toc">
+      <ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#一个独立的Rust可执行二进制文件"><span class="toc-number">1.</span> <span class="toc-text">一个独立的Rust可执行二进制文件</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#简介"><span class="toc-number">1.1.</span> <span class="toc-text">简介</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#禁用标准库"><span class="toc-number">1.2.</span> <span class="toc-text">禁用标准库</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#no-std属性"><span class="toc-number">1.2.1.</span> <span class="toc-text">no_std属性</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#禁用堆栈解退"><span class="toc-number">1.2.2.</span> <span class="toc-text">禁用堆栈解退</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#Panic实现"><span class="toc-number">1.2.3.</span> <span class="toc-text">Panic实现</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#start属性"><span class="toc-number">1.2.4.</span> <span class="toc-text">start属性</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#覆写入口"><span class="toc-number">1.2.5.</span> <span class="toc-text">覆写入口</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#Linux"><span class="toc-number">1.2.5.1.</span> <span class="toc-text">Linux</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#Windows"><span class="toc-number">1.2.5.2.</span> <span class="toc-text">Windows</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#macOS"><span class="toc-number">1.2.5.3.</span> <span class="toc-text">macOS</span></a></li></ol></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#总结"><span class="toc-number">1.3.</span> <span class="toc-text">总结</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#接下来？"><span class="toc-number">1.4.</span> <span class="toc-text">接下来？</span></a></li></ol></li></ol>
+    </div>
+  </span>
+</div>
+
+    
+    <div class="content index py4">
+        
+        <article class="post" itemscope="" itemtype="http://schema.org/BlogPosting">
+  <header>
+    
+    <h1 class="posttitle" itemprop="name headline">
+        一个独立的Rust可执行二进制文件
+    </h1>
+
+
+
+    <div class="meta">
+      <span class="author" itemprop="author" itemscope="" itemtype="http://schema.org/Person">
+        <span itemprop="name">用Rust编写一个操作系统</span>
+      </span>
+      
+    <div class="postdate">
+        <time datetime="2018-02-10T12:07:39.000Z" itemprop="datePublished">2018-02-10</time>
+    </div>
+
+
+      
+
+      
+    <div class="article-tag">
+        <i class="fas fa-tag"></i>
+        <a class="tag-link" href="/tags/Bare-Bones/">Bare Bones</a>
+    </div>
+
+
+    </div>
+  </header>
+  
+
+  <div class="content" itemprop="articleBody">
+    <h1 id="一个独立的Rust可执行二进制文件"><a href="#一个独立的Rust可执行二进制文件" class="headerlink" title="一个独立的Rust可执行二进制文件"></a>一个独立的Rust可执行二进制文件</h1><p>创建我们自己的操作系统内核的第一步是创建一个不链接到Rust标准库的Rust可执行文件。这将会让我们能在没有操作系统支持的情况下在裸机上运行Rust代码。</p>
+<h2 id="简介"><a href="#简介" class="headerlink" title="简介"></a>简介</h2><p>想要编写一个操作系统内核的话，我们需要让我们的代码不依赖任何操作系统的特性。这意味着我们不能使用线程、文件、堆内存、网络、随机数<a href="译者注：作者指的应该是Unix-like操作系统的`/dev/random`，而像C语言中的`rand()`在裸机上仍然可以用线性同余法实现。">^1</a>、标准输出或者任何其他要求操作系统抽象或者特定硬件的特性。这合乎情理，因为我们要尝试写我们自己的OS和我们自己的硬件驱动。</p>
+<p>这就意味着我们不能使用Rust标准库中的绝大部分， 但是我们还是<em>能</em>使用很多Rust的特性。例如，我们可以使用迭代器、闭包、模式匹配、可选值（option）和result、格式化字符串，当然还有对象的所有权系统。这些特性使得以一种非常具有表达力，高层次的方式编写内核而无需担心未定义行为或者内存安全性问题。</p>
+<p>为了创建一个Rust的操作系统内核，我们需要创建一个无需操作系统支持即可运行的可执行文件。这样一个可执行文件常被称为“独立的（freestanding）”或者“裸机上的（bare-metal）”可执行文件。</p>
+<p>这篇文章将会讲述创建一个独立的Rust可执行二进制文件所需的步骤，以及为什么这些步骤是必须的。如果你仅仅想要一个例子，你可以直接跳到总结部分。</p>
+<h2 id="禁用标准库"><a href="#禁用标准库" class="headerlink" title="禁用标准库"></a>禁用标准库</h2><p>默认情况下，所有Rust crate都会链接到标准库，而标准库依赖于操作系统提供的特性，如线程、文件或网络。它也依赖于C标准库<code>libc</code>，而<code>libc</code>与OS提供的服务有密切的关系。由于我们的计划是自己写操作系统，我们不能使用任何对OS有所依赖的库。因此我们要使用<code>no_std</code>属性禁止自动包含标准库。</p>
+<p>我们从创建一个新的cargo应用程序项目开始。最简单的方式是使用下面的命令：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">&gt; cargo new blog_os --bin</span><br></pre></td></tr></table></figure>
+<p>我将这个项目命名为<code>blog_os</code>，当然你们也可以选择你们自己的名字。<code>—bin</code>标志表示我们要创建一个可执行二进制文件（而非一个库）。当我们运行这个命令的时候，cargo会为我们创建下面的目录结构：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">blog_os</span><br><span class="line">├── Cargo.toml</span><br><span class="line">└── src</span><br><span class="line">    └── main.rs</span><br></pre></td></tr></table></figure>
+<p><code>Cargo.html</code>包含crate的配置，例如crate的名字，作者，semantic版本号，以及依赖。<code>src/main.rs</code>文件包含我们的crate的根模块和我们的<code>main</code>函数。你可以使用<code>cargo build</code>命令来编译你的crate，然后就能在<code>target/debug</code>子文件夹下发现可以编译得到的可以执行的<code>blog_os</code> 二进制文件。</p>
+<h3 id="no-std属性"><a href="#no-std属性" class="headerlink" title="no_std属性"></a><code>no_std</code>属性</h3><p>现在我们的crate默认会链接到标准库。我们来试着通过添加<code>no_std</code>属性来禁止这么做。</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// main.rs</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#![no_std]</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">fn</span> <span class="title">main</span></span>() &#123;</span><br><span class="line">    <span class="built_in">println!</span>(<span class="string">"Hello, world!"</span>);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>当我们试着构建时（通过运行命令<code>cargo build</code>），会出现下面的错误：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">error: cannot find macro `println!` <span class="keyword">in</span> this scope</span><br><span class="line"> --&gt; src/main.rs:4:5</span><br><span class="line">  |</span><br><span class="line">4 |     println!(<span class="string">"Hello, world!"</span>);</span><br><span class="line">  |     ^^^^^^^</span><br></pre></td></tr></table></figure>
+<p>这个错误出现的原因时<code>println</code>宏是标准库的一部分，而我们现在已经不再包含标准库了。因此我们也不再能print东西了。这合乎情理，因为<code>pringln</code>是向标准输出写东西，而标准输出则是一个操作系统提供的特殊文件描述符。</p>
+<p>所以让我们移除输出语句，再试着编译一次空的主函数：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// main.rs</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#![no_std]</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">fn</span> <span class="title">main</span></span>() &#123;&#125;</span><br></pre></td></tr></table></figure>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">&gt; cargo build</span><br><span class="line">error: language item required, but not found: `panic_impl`</span><br><span class="line">error: language item required, but not found: `eh_personality`</span><br></pre></td></tr></table></figure>
+<p>现在编译器在抱怨缺少了一些<em>language item</em>。<em>language item</em>是编译器会在特定情况下会调用的特殊的可插拔（pluggable）函数，例如当程序panic的时候。一般情况下，这些language item是由标准库提供的，但我们禁用了它。</p>
+<p>提供我们自己的 language item 实现是有可能的，但这是没有办法的办法。因为 language item 是高度不稳定的实现细节，甚至不会有针对它们的类型检查（也就是说编译器甚至不检查它们接受了适当的参数类型）。</p>
+<p>幸运的是，有一些更稳定的方法来修复这些与 language item 有关的错误。</p>
+<h3 id="禁用堆栈解退"><a href="#禁用堆栈解退" class="headerlink" title="禁用堆栈解退"></a>禁用堆栈解退</h3><p><code>eh_personality</code> language item 是用来实现堆栈解退的。默认情况下，Rust使用堆栈解退机制来在panic时运行栈上所有还在生存期内的变量的析构函数。这确保了所有用到的内存都被释放，并且允许父线程捕获到这个panic，并继续运行。然而堆栈解退是一个复杂的过程，而且要求一些系统相关的库（例如Linux上的libunwind或Windows上的结构化异常处理），所以我们不会在我们的操作系统中使用它。</p>
+<p>还有一些情况下堆栈解退也不是合适的处理方法，所以Rust提供了一个替代的的“abort on panic”选项。这会禁用堆栈解退符号信息的生成，因此会可观地减小二进制文件的大小。我们有多种方法可以禁用堆栈解退。最简单的方法是将下面这几行加到我们的<code>Cargo.toml</code>：</p>
+<figure class="highlight toml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="section">[profile.dev]</span></span><br><span class="line"><span class="attr">panic</span> = <span class="string">"abort"</span></span><br><span class="line"></span><br><span class="line"><span class="section">[profile.release]</span></span><br><span class="line"><span class="attr">panic</span> = <span class="string">"abort"</span></span><br></pre></td></tr></table></figure>
+<p>这将会将<code>dev</code>构建模式（ <code>cargo build</code>）和<code>release</code>构建模式下（ <code>cargo build --release</code>）的panic处理策略均设置为<code>about</code>。这样<code>eh_personality</code> language item应该就不再需要了。</p>
+<h3 id="Panic实现"><a href="#Panic实现" class="headerlink" title="Panic实现"></a>Panic实现</h3><p><code>panic_impl</code> language item 定义了编译器在panic出现时会调用的函数。我们可以使用[<code>panic_handler</code>] 属性来的定义一个<code>panic</code>函数。</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 在 main.rs 中</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">use</span> core::panic::PanicInfo;</span><br><span class="line"></span><br><span class="line"><span class="comment">/// 这个函数在panic时被调用</span></span><br><span class="line"><span class="meta">#[panic_handler]</span></span><br><span class="line"><span class="function"><span class="keyword">fn</span> <span class="title">panic</span></span>(_info: &amp;PanicInfo) -&gt; ! &#123;</span><br><span class="line">    <span class="keyword">loop</span> &#123;&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>PanicInfo</code>参数包含了panic发生的文件和行以及可选的panic信息。这个函数应该永远不会返回，所以我们让它返回一个“never type”<code>!</code>，把它标记为一个发散函数。我们现在不能在这个函数中多写些什么了，所以我们仅仅只是让它在里面无限循环。</p>
+<p>现在我们修好了这两个 language item 错误。然而，如果我们现在试着编译，编译器要求要有另外一个 language item ：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;</span><span class="bash"> cargo build</span></span><br><span class="line">error: requires `start` lang_item</span><br></pre></td></tr></table></figure>
+<h3 id="start属性"><a href="#start属性" class="headerlink" title="start属性"></a><code>start</code>属性</h3><p>你可能曾经认为<code>main</code>函数是我们运行一个程序时调用的第一个函数。然而，大部分语言独有一个运行时系统，负责垃圾回收（例如Java）或者软件实现的线程（例如Go中的gorotine）。这个运行时需要在<code>main</code>调用前被调用，因为它需要初始化它自己。</p>
+<p>在一个链接到了标准库的Rust二进制文件中，运行过程开始于一个被称为<code>crt0</code> （“C runtime zero”）的C运行时库，它会为C程序设置环境。这些设置包含了创建一个栈和将参数放在合适的寄存器里。然后这个C运行时会调用Rust运行时的入口，这个入口就是被<code>start</code>属性所标记的。Rust的运行时非常小，它只负责一些小事，比如设置栈溢出的保护或者在panic时要打印的回朔信息。这个运行时最终会调用<code>main</code>函数。</p>
+<p>我们的独立可执行文件不能使用Rust运行时和<code>crt0</code>，所以我们需要定义我们自己的入口。实现<code>start</code> language item 并没有用，因为它还是会需要<code>crt0</code>。替代的，我们需要直接覆盖<code>crt0</code>入口。</p>
+<h3 id="覆写入口"><a href="#覆写入口" class="headerlink" title="覆写入口"></a>覆写入口</h3><p>要告诉Rust我们不想使用常规的入口链，我们要添加 <code>#![no_main]</code> 属性。</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#![no_std]</span></span><br><span class="line"><span class="meta">#![no_main]</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">use</span> core::panic::PanicInfo;</span><br><span class="line"></span><br><span class="line"><span class="comment">/// 这个函数在panic时被调用</span></span><br><span class="line"><span class="meta">#[panic_handler]</span></span><br><span class="line"><span class="function"><span class="keyword">fn</span> <span class="title">panic</span></span>(_info: &amp;PanicInfo) -&gt; ! &#123;</span><br><span class="line">    <span class="keyword">loop</span> &#123;&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>你可能会注意到我们移除了<code>main</code>函数。因为没有底层的运行时，<code>main</code>没有意义。作为替代，我们现在会覆写操作系统的入口。</p>
+<p>入口的调用规范取决于你的操作系统。我建议你阅读Linux部分即使你用的是另一个操作系统，因为我们在我们的内核中将会使用这种规范。</p>
+<h4 id="Linux"><a href="#Linux" class="headerlink" title="Linux"></a>Linux</h4><p>在Linux上，默认的入口被称为<code>_start</code>。连接器仅仅只是找到一个有这个名字的函数，然后将其设置为可执行文件的入口。所以，要覆写入口，我们要定义我们自己的<code>_start</code>函数：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#[no_mangle]</span></span><br><span class="line"><span class="keyword">pub</span> <span class="keyword">extern</span> <span class="string">"C"</span> <span class="function"><span class="keyword">fn</span> <span class="title">_start</span></span>() -&gt; ! &#123;</span><br><span class="line">    <span class="keyword">loop</span> &#123;&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>我们使用了<code>no_mangle</code>属性禁用了名字修饰，这很重要，否则编译器会生成一些加密过的像<code>_ZN3blog_os4_start7hb173fedf945531caE</code>的符号，这会使得链接器认不出来。我们也将这个函数标记为 <code>extern &quot;C&quot;</code> 来告诉编译器使用C调用规范（而非不确定的Rust调用规范）。</p>
+<p><code>!</code>返回类型表示这个函数是一个“发散函数”，即永远不允许返回的函数。这是必要的，因为我们的入口并非是有其他函数调用，而是直接被操作系统或是bootloader调用。所以我们应该使用诸如进行<code>exit</code>系统调用的方式而非返回。在我们这个情况下，关机可能是一个合理的行为，因为我们的独立二进制文件执行完之后就没有什么能做的事了。我们现在暂时先放一个无穷循环来满足需要。</p>
+<p>如果我们现在试图构建，会发生一个丑陋的链接期错误：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line">error: linking with `cc` failed: <span class="built_in">exit</span> code: 1</span><br><span class="line">  |</span><br><span class="line">  = note: <span class="string">"cc"</span> <span class="string">"-Wl,--as-needed"</span> <span class="string">"-Wl,-z,noexecstack"</span> <span class="string">"-m64"</span> <span class="string">"-L"</span></span><br><span class="line">    <span class="string">"/…/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/x86_64-unknown-linux-gnu/lib"</span></span><br><span class="line">    <span class="string">"/…/blog_os/target/debug/deps/blog_os-f7d4ca7f1e3c3a09.0.o"</span> […]</span><br><span class="line">    <span class="string">"-o"</span> <span class="string">"/…/blog_os/target/debug/deps/blog_os-f7d4ca7f1e3c3a09"</span></span><br><span class="line">    <span class="string">"-Wl,--gc-sections"</span> <span class="string">"-pie"</span> <span class="string">"-Wl,-z,relro,-z,now"</span> <span class="string">"-nodefaultlibs"</span></span><br><span class="line">    <span class="string">"-L"</span> <span class="string">"/…/blog_os/target/debug/deps"</span></span><br><span class="line">    <span class="string">"-L"</span> <span class="string">"/…/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/x86_64-unknown-linux-gnu/lib"</span></span><br><span class="line">    <span class="string">"-Wl,-Bstatic"</span></span><br><span class="line">    <span class="string">"/…/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/x86_64-unknown-linux-gnu/lib/libcore-dd5bba80e2402629.rlib"</span></span><br><span class="line">    <span class="string">"-Wl,-Bdynamic"</span></span><br><span class="line">  = note: /usr/lib/gcc/x86_64-linux-gnu/5/../../../x86_64-linux-gnu/Scrt1.o: In <span class="keyword">function</span> `_start<span class="string">':</span></span><br><span class="line"><span class="string">          (.text+0x12): undefined reference to `__libc_csu_fini'</span></span><br><span class="line">          /usr/lib/gcc/x86_64-linux-gnu/5/../../../x86_64-linux-gnu/Scrt1.o: In <span class="keyword">function</span> `_start<span class="string">':</span></span><br><span class="line"><span class="string">          (.text+0x19): undefined reference to `__libc_csu_init'</span></span><br><span class="line">          /usr/lib/gcc/x86_64-linux-gnu/5/../../../x86_64-linux-gnu/Scrt1.o: In <span class="keyword">function</span> `_start<span class="string">':</span></span><br><span class="line"><span class="string">          (.text+0x25): undefined reference to `__libc_start_main'</span></span><br><span class="line">          collect2: error: ld returned 1 <span class="built_in">exit</span> status</span><br></pre></td></tr></table></figure>
+<p>问题在于我们的链接器仍然试图链接我们的程序到C运行时的启动流程，它需要C标准库<code>libc</code>中的一些符号，但由于我们使用了<code>no_std</code>属性，我们不会链接到<code>libc</code>。我们需要摆脱C的启动流程。我们可以通过给链接器传入 <code>-nostartfiles</code> 标志来这么做。</p>
+<p>在使用cargo时传入链接器属性的一个方法是使用 <code>cargo rustc</code> 命令。这个命令和 <code>cargo build</code>做的事情是类似的，但它允许给<code>rustc</code>，cargo后台的Rust编译器，传入选项。 <code>rustc</code> 有（不稳定的） <code>-Z pre-link-arg</code> 标志，这将会给连接器传参。都结合起来的话，我们新的构建命令看起来像这样：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">&gt; cargo rustc -- -Z pre-link-arg=-nostartfiles</span><br></pre></td></tr></table></figure>
+<p>使用这个命令，我们的crate最终被构建成了一个独立的可执行文件！</p>
+<h4 id="Windows"><a href="#Windows" class="headerlink" title="Windows"></a>Windows</h4><p>在Windows上，链接器要求两个取决于使用的子系统的入口。对于 <code>CONSOLE</code> 子系统，我们需要一个称为<code>mainCRTStartup</code>的函数，它会调用一个称为<code>main</code>的函数。就像在 Linux 上我们所做的那样，我们用自定义的 <code>no_mangle</code> 函数覆写入口点。</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#[no_mangle]</span></span><br><span class="line"><span class="keyword">pub</span> <span class="keyword">extern</span> <span class="string">"C"</span> <span class="function"><span class="keyword">fn</span> <span class="title">mainCRTStartup</span></span>() -&gt; ! &#123;</span><br><span class="line">    main();</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="meta">#[no_mangle]</span></span><br><span class="line"><span class="keyword">pub</span> <span class="keyword">extern</span> <span class="string">"C"</span> <span class="function"><span class="keyword">fn</span> <span class="title">main</span></span>() -&gt; ! &#123;</span><br><span class="line">    <span class="keyword">loop</span> &#123;&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h4 id="macOS"><a href="#macOS" class="headerlink" title="macOS"></a>macOS</h4><p>macOS不支持静态链接的二进制文件，所以我们需要链接<code>libSystem</code>库。入口点叫<code>main</code>：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#[no_mangle]</span></span><br><span class="line"><span class="keyword">pub</span> <span class="keyword">extern</span> <span class="string">"C"</span> <span class="function"><span class="keyword">fn</span> <span class="title">main</span></span>() -&gt; ! &#123;</span><br><span class="line">    <span class="keyword">loop</span> &#123;&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>要构建并链接 <code>libSystem</code>，我们要运行下面的命令：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">&gt; cargo rustc -- -Z pre-link-arg=-lSystem</span><br></pre></td></tr></table></figure>
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>一个最小化的独立Rust二进制文件看起来像这样：</p>
+<p><code>src/main.rs</code>：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#![no_std]</span> <span class="comment">// 不要链接Rust标准库</span></span><br><span class="line"><span class="meta">#![no_main]</span> <span class="comment">// 禁止所有Rust-level的入口</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">use</span> core::panic::PanicInfo;</span><br><span class="line"></span><br><span class="line"><span class="comment">/// 这个函数在panic时调用</span></span><br><span class="line"><span class="meta">#[panic_handler]</span></span><br><span class="line"><span class="function"><span class="keyword">fn</span> <span class="title">panic</span></span>(_info: &amp;PanicInfo) -&gt; ! &#123;</span><br><span class="line">    <span class="keyword">loop</span> &#123;&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 在Linux上：</span></span><br><span class="line"><span class="meta">#[no_mangle]</span> <span class="comment">// 不要修饰这个函数名</span></span><br><span class="line"><span class="keyword">pub</span> <span class="keyword">extern</span> <span class="string">"C"</span> <span class="function"><span class="keyword">fn</span> <span class="title">_start</span></span>() -&gt; ! &#123;</span><br><span class="line">    <span class="comment">// 这个函数是入口点，因为链接器默认会寻找一个</span></span><br><span class="line">    <span class="comment">// 函数名是 `_start`的函数</span></span><br><span class="line">    <span class="keyword">loop</span> &#123;&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 在Windows上：</span></span><br><span class="line"><span class="meta">#[no_mangle]</span></span><br><span class="line"><span class="keyword">pub</span> <span class="keyword">extern</span> <span class="string">"C"</span> <span class="function"><span class="keyword">fn</span> <span class="title">mainCRTStartup</span></span>() -&gt; ! &#123;</span><br><span class="line">    main();</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="meta">#[no_mangle]</span></span><br><span class="line"><span class="keyword">pub</span> <span class="keyword">extern</span> <span class="string">"C"</span> <span class="function"><span class="keyword">fn</span> <span class="title">main</span></span>() -&gt; ! &#123;</span><br><span class="line">    <span class="keyword">loop</span> &#123;&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 在macOS上：</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#[no_mangle]</span></span><br><span class="line"><span class="keyword">pub</span> <span class="keyword">extern</span> <span class="string">"C"</span> <span class="function"><span class="keyword">fn</span> <span class="title">main</span></span>() -&gt; ! &#123;</span><br><span class="line">    <span class="keyword">loop</span> &#123;&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>Cargo.toml</code>：</p>
+<figure class="highlight toml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="section">[package]</span></span><br><span class="line"><span class="attr">name</span> = <span class="string">"crate_name"</span></span><br><span class="line"><span class="attr">version</span> = <span class="string">"0.1.0"</span></span><br><span class="line"><span class="attr">authors</span> = [<span class="string">"Author Name &lt;author@example.com&gt;"</span>]</span><br><span class="line"></span><br><span class="line"><span class="comment"># 这个配置是在`cargo build`时使用的</span></span><br><span class="line"><span class="section">[profile.dev]</span></span><br><span class="line"><span class="attr">panic</span> = <span class="string">"abort"</span> # 禁用panic时的堆栈解退</span><br><span class="line"></span><br><span class="line"><span class="comment"># 这个配置是在`cargo build --release`时使用的</span></span><br><span class="line"><span class="section">[profile.release]</span></span><br><span class="line"><span class="attr">panic</span> = <span class="string">"abort"</span> # 禁用panic时的堆栈解退</span><br></pre></td></tr></table></figure>
+<p>可以使用下面的命令编译：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#</span><span class="bash"> Linux</span></span><br><span class="line"><span class="meta">&gt;</span><span class="bash"> cargo rustc -- -Z pre-link-arg=-nostartfiles</span></span><br><span class="line"><span class="meta">#</span><span class="bash"> Windows</span></span><br><span class="line"><span class="meta">&gt;</span><span class="bash"> cargo build</span></span><br><span class="line"><span class="meta">#</span><span class="bash"> macOS</span></span><br><span class="line"><span class="meta">&gt;</span><span class="bash"> cargo rustc -- -Z pre-link-arg=-lSystem</span></span><br></pre></td></tr></table></figure>
+<p>注意这只是一个独立Rust二进制程序的最小化例子。这个二进制文件还需要很多东西，例如<code>_start</code>被调用时需要有一个已经被初始化好的栈。<strong>所以要是想真的使用这样一个二进制文件，还需要更多的步骤。</strong></p>
+<h2 id="接下来？"><a href="#接下来？" class="headerlink" title="接下来？"></a>接下来？</h2><p>下一篇文件通过介绍构建一个最小化操作系统内核需要的步骤扩展了我们的最小化独立二进制文件。他解释了如何为目标系统配置内核，如何使用一个bootloader启动它，和如何在屏幕上显示一些什么。</p>
+
+  </div>
+</article>
+
+
+
+        
+          <div id="footer-post-container">
+  <div id="footer-post">
+
+    <div id="nav-footer" style="display: none">
+      <ul>
+         
+          <li><a href="/">Home</a></li>
+         
+          <li><a href="/about/">About</a></li>
+         
+          <li><a href="/archives/">Writing</a></li>
+         
+          <li><a href="/projects_url">Projects</a></li>
+        
+      </ul>
+    </div>
+
+    <div id="toc-footer" style="display: none">
+      <ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#一个独立的Rust可执行二进制文件"><span class="toc-number">1.</span> <span class="toc-text">一个独立的Rust可执行二进制文件</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#简介"><span class="toc-number">1.1.</span> <span class="toc-text">简介</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#禁用标准库"><span class="toc-number">1.2.</span> <span class="toc-text">禁用标准库</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#no-std属性"><span class="toc-number">1.2.1.</span> <span class="toc-text">no_std属性</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#禁用堆栈解退"><span class="toc-number">1.2.2.</span> <span class="toc-text">禁用堆栈解退</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#Panic实现"><span class="toc-number">1.2.3.</span> <span class="toc-text">Panic实现</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#start属性"><span class="toc-number">1.2.4.</span> <span class="toc-text">start属性</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#覆写入口"><span class="toc-number">1.2.5.</span> <span class="toc-text">覆写入口</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#Linux"><span class="toc-number">1.2.5.1.</span> <span class="toc-text">Linux</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#Windows"><span class="toc-number">1.2.5.2.</span> <span class="toc-text">Windows</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#macOS"><span class="toc-number">1.2.5.3.</span> <span class="toc-text">macOS</span></a></li></ol></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#总结"><span class="toc-number">1.3.</span> <span class="toc-text">总结</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#接下来？"><span class="toc-number">1.4.</span> <span class="toc-text">接下来？</span></a></li></ol></li></ol>
+    </div>
+
+    <div id="share-footer" style="display: none">
+      <ul>
+  <li><a class="icon" href="http://www.facebook.com/sharer.php?u=http://yoursite.com/2018/02/10/一个独立的Rust可执行二进制文件/"><i class="fab fa-facebook fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="https://twitter.com/share?url=http://yoursite.com/2018/02/10/一个独立的Rust可执行二进制文件/&text=一个独立的Rust可执行二进制文件"><i class="fab fa-twitter fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://www.linkedin.com/shareArticle?url=http://yoursite.com/2018/02/10/一个独立的Rust可执行二进制文件/&title=一个独立的Rust可执行二进制文件"><i class="fab fa-linkedin fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="https://pinterest.com/pin/create/bookmarklet/?url=http://yoursite.com/2018/02/10/一个独立的Rust可执行二进制文件/&is_video=false&description=一个独立的Rust可执行二进制文件"><i class="fab fa-pinterest fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="mailto:?subject=一个独立的Rust可执行二进制文件&body=Check out this article: http://yoursite.com/2018/02/10/一个独立的Rust可执行二进制文件/"><i class="fas fa-envelope fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="https://getpocket.com/save?url=http://yoursite.com/2018/02/10/一个独立的Rust可执行二进制文件/&title=一个独立的Rust可执行二进制文件"><i class="fab fa-get-pocket fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://reddit.com/submit?url=http://yoursite.com/2018/02/10/一个独立的Rust可执行二进制文件/&title=一个独立的Rust可执行二进制文件"><i class="fab fa-reddit fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://www.stumbleupon.com/submit?url=http://yoursite.com/2018/02/10/一个独立的Rust可执行二进制文件/&title=一个独立的Rust可执行二进制文件"><i class="fab fa-stumbleupon fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://digg.com/submit?url=http://yoursite.com/2018/02/10/一个独立的Rust可执行二进制文件/&title=一个独立的Rust可执行二进制文件"><i class="fab fa-digg fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://www.tumblr.com/share/link?url=http://yoursite.com/2018/02/10/一个独立的Rust可执行二进制文件/&name=一个独立的Rust可执行二进制文件&description="><i class="fab fa-tumblr fa-lg" aria-hidden="true"></i></a></li>
+</ul>
+
+    </div>
+
+    <div id="actions-footer">
+        <a id="menu" class="icon" href="#" onclick="$('#nav-footer').toggle();return false;"><i class="fas fa-bars fa-lg" aria-hidden="true"></i> Menu</a>
+        <a id="toc" class="icon" href="#" onclick="$('#toc-footer').toggle();return false;"><i class="fas fa-list fa-lg" aria-hidden="true"></i> TOC</a>
+        <a id="share" class="icon" href="#" onclick="$('#share-footer').toggle();return false;"><i class="fas fa-share-alt fa-lg" aria-hidden="true"></i> Share</a>
+        <a id="top" style="display:none" class="icon" href="#" onclick="$('html, body').animate({ scrollTop: 0 }, 'fast');"><i class="fas fa-chevron-up fa-lg" aria-hidden="true"></i> Top</a>
+    </div>
+
+  </div>
+</div>
+
+        
+        <footer id="footer">
+  <div class="footer-left">
+    Copyright &copy; 2018 Philipp Oppermann, translation into Chinese by 龙方淞
+  </div>
+  <!-- <div class="footer-right">
+    <nav>
+      <ul> -->
+        <!--  
+          <li><a href="/">Home</a></li>
+         
+          <li><a href="/about/">About</a></li>
+         
+          <li><a href="/archives/">Writing</a></li>
+         
+          <li><a href="/projects_url">Projects</a></li>
+         -->
+      <!-- </ul>
+    </nav>
+  </div> -->
+</footer>
+
+    </div>
+</body>
+</html>
+<!-- styles -->
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+<link rel="stylesheet" href="/lib/justified-gallery/css/justifiedGallery.min.css">
+
+<!-- jquery -->
+<script src="/lib/jquery/jquery.min.js"></script>
+<script src="/lib/justified-gallery/js/jquery.justifiedGallery.min.js"></script>
+<script src="/js/main.js"></script>
+<!-- search -->
+
+<!-- Google Analytics -->
+
+<!-- Baidu Analytics -->
+
+<!-- Disqus Comments -->
+
+
