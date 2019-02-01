@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html>
+<head><meta name="generator" content="Hexo 3.8.0">
+    <!-- so meta -->
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="HandheldFriendly" content="True">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <meta name="description" content="简介在上一篇文章中，我们了解了分页的原理以及x86_64上4级页表的工作原理。我们还发现引导加载程序已经为我们的内核设置了页表层次结构，这意味着我们的内核已经在虚拟地址上运行。这提高了安全性，因为非法内存访问会导致页面错误异常，而不是修改任意物理内存。 但是，当我们尝试从内核访问页表时会出现问题，因为我们无法直接访问存储在页表条目或CR3寄存器中的物理地址。当我们尝试检查活动页表时，我们在上一篇文">
+<meta name="keywords" content="Memory Management">
+<meta property="og:type" content="article">
+<meta property="og:title" content="高级分页">
+<meta property="og:url" content="https://longfangsong.github.io/2019/02/01/高级分页/index.html">
+<meta property="og:site_name" content="用Rust编写一个操作系统">
+<meta property="og:description" content="简介在上一篇文章中，我们了解了分页的原理以及x86_64上4级页表的工作原理。我们还发现引导加载程序已经为我们的内核设置了页表层次结构，这意味着我们的内核已经在虚拟地址上运行。这提高了安全性，因为非法内存访问会导致页面错误异常，而不是修改任意物理内存。 但是，当我们尝试从内核访问页表时会出现问题，因为我们无法直接访问存储在页表条目或CR3寄存器中的物理地址。当我们尝试检查活动页表时，我们在上一篇文">
+<meta property="og:locale" content="default">
+<meta property="og:image" content="https://d33wubrfki0l68.cloudfront.net/124436854aeff3df13c86c3ffd3f676d3142a267/82b62/paging-introduction/x86_64-page-table-translation.svg">
+<meta property="og:image" content="https://os.phil-opp.com/advanced-paging/identity-mapped-page-tables.svg">
+<meta property="og:image" content="https://os.phil-opp.com/advanced-paging/temporarily-mapped-page-tables.png">
+<meta property="og:image" content="https://os.phil-opp.com/advanced-paging/recursive-page-table.png">
+<meta property="og:image" content="https://os.phil-opp.com/advanced-paging/recursive-page-table-access-level-1.png">
+<meta property="og:image" content="https://os.phil-opp.com/advanced-paging/recursive-page-table-access-level-2.png">
+<meta property="og:image" content="https://os.phil-opp.com/advanced-paging/recursive-page-table-access-level-3.png">
+<meta property="og:image" content="https://d33wubrfki0l68.cloudfront.net/55d00a7a89ddaf126f40bb1414de0d78fcde09e4/478a7/paging-introduction/x86_64-table-indices-from-address.svg">
+<meta property="og:image" content="https://os.phil-opp.com/advanced-paging/table-indices-from-address-recursive-level-1.svg">
+<meta property="og:image" content="https://os.phil-opp.com/advanced-paging/table-indices-from-address-recursive-level-2.svg">
+<meta property="og:image" content="https://os.phil-opp.com/advanced-paging/table-indices-from-address-recursive-level-3.svg">
+<meta property="og:image" content="https://os.phil-opp.com/advanced-paging/table-indices-from-address-recursive-level-4.svg">
+<meta property="og:image" content="https://d33wubrfki0l68.cloudfront.net/55d00a7a89ddaf126f40bb1414de0d78fcde09e4/478a7/paging-introduction/x86_64-table-indices-from-address.svg">
+<meta property="og:image" content="https://os.phil-opp.com/advanced-paging/qemu-translate-addr.png">
+<meta property="og:image" content="https://os.phil-opp.com/advanced-paging/qemu-new-mapping.png">
+<meta property="og:updated_time" content="2019-02-01T13:49:33.348Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="高级分页">
+<meta name="twitter:description" content="简介在上一篇文章中，我们了解了分页的原理以及x86_64上4级页表的工作原理。我们还发现引导加载程序已经为我们的内核设置了页表层次结构，这意味着我们的内核已经在虚拟地址上运行。这提高了安全性，因为非法内存访问会导致页面错误异常，而不是修改任意物理内存。 但是，当我们尝试从内核访问页表时会出现问题，因为我们无法直接访问存储在页表条目或CR3寄存器中的物理地址。当我们尝试检查活动页表时，我们在上一篇文">
+<meta name="twitter:image" content="https://d33wubrfki0l68.cloudfront.net/124436854aeff3df13c86c3ffd3f676d3142a267/82b62/paging-introduction/x86_64-page-table-translation.svg">
+    
+    
+        
+          
+              <link rel="shortcut icon" href="/Writing_an_OS_in_Rust_zh/images/favicon.ico">
+          
+        
+        
+          
+            <link rel="icon" type="image/png" href="/Writing_an_OS_in_Rust_zh/images/favicon-192x192.png" sizes="192x192">
+          
+        
+        
+          
+            <link rel="apple-touch-icon" sizes="180x180" href="/Writing_an_OS_in_Rust_zh/images/apple-touch-icon.png">
+          
+        
+    
+    <!-- title -->
+    <title>高级分页</title>
+    <!-- styles -->
+    <link rel="stylesheet" href="/Writing_an_OS_in_Rust_zh/css/style.css">
+    <!-- persian styles -->
+    
+      <link rel="stylesheet" href="/Writing_an_OS_in_Rust_zh/css/rtl.css">
+    
+    <!-- rss -->
+    
+    
+</head>
+
+<body class="max-width mx-auto px3 ltr">
+    
+      <div id="header-post">
+  <a id="menu-icon" href="#"><i class="fas fa-bars fa-lg"></i></a>
+  <a id="menu-icon-tablet" href="#"><i class="fas fa-bars fa-lg"></i></a>
+  <a id="top-icon-tablet" href="#" onclick="$('html, body').animate({ scrollTop: 0 }, 'fast');" style="display:none;"><i class="fas fa-chevron-up fa-lg"></i></a>
+  <span id="menu">
+    <span id="nav">
+      <ul>
+         
+          <li><a href="/Writing_an_OS_in_Rust_zh/">Home</a></li>
+         
+          <li><a href="/Writing_an_OS_in_Rust_zh/about/">About</a></li>
+         
+          <li><a href="/Writing_an_OS_in_Rust_zh/archives/">Writing</a></li>
+         
+          <li><a href="/Writing_an_OS_in_Rust_zh/projects_url">Projects</a></li>
+        
+      </ul>
+    </span>
+    <br>
+    <span id="actions">
+      <ul>
+        
+        
+        <li><a class="icon" href="/Writing_an_OS_in_Rust_zh/2019/01/31/介绍分页/"><i class="fas fa-chevron-right" aria-hidden="true" onmouseover="$('#i-next').toggle();" onmouseout="$('#i-next').toggle();"></i></a></li>
+        
+        <li><a class="icon" href="#" onclick="$('html, body').animate({ scrollTop: 0 }, 'fast');"><i class="fas fa-chevron-up" aria-hidden="true" onmouseover="$('#i-top').toggle();" onmouseout="$('#i-top').toggle();"></i></a></li>
+        <li><a class="icon" href="#"><i class="fas fa-share-alt" aria-hidden="true" onmouseover="$('#i-share').toggle();" onmouseout="$('#i-share').toggle();" onclick="$('#share').toggle();return false;"></i></a></li>
+      </ul>
+      <span id="i-prev" class="info" style="display:none;">Previous post</span>
+      <span id="i-next" class="info" style="display:none;">Next post</span>
+      <span id="i-top" class="info" style="display:none;">Back to top</span>
+      <span id="i-share" class="info" style="display:none;">Share post</span>
+    </span>
+    <br>
+    <div id="share" style="display: none">
+      <ul>
+  <li><a class="icon" href="http://www.facebook.com/sharer.php?u=https://longfangsong.github.io/2019/02/01/高级分页/"><i class="fab fa-facebook " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="https://twitter.com/share?url=https://longfangsong.github.io/2019/02/01/高级分页/&text=高级分页"><i class="fab fa-twitter " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://www.linkedin.com/shareArticle?url=https://longfangsong.github.io/2019/02/01/高级分页/&title=高级分页"><i class="fab fa-linkedin " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="https://pinterest.com/pin/create/bookmarklet/?url=https://longfangsong.github.io/2019/02/01/高级分页/&is_video=false&description=高级分页"><i class="fab fa-pinterest " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="mailto:?subject=高级分页&body=Check out this article: https://longfangsong.github.io/2019/02/01/高级分页/"><i class="fas fa-envelope " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="https://getpocket.com/save?url=https://longfangsong.github.io/2019/02/01/高级分页/&title=高级分页"><i class="fab fa-get-pocket " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://reddit.com/submit?url=https://longfangsong.github.io/2019/02/01/高级分页/&title=高级分页"><i class="fab fa-reddit " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://www.stumbleupon.com/submit?url=https://longfangsong.github.io/2019/02/01/高级分页/&title=高级分页"><i class="fab fa-stumbleupon " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://digg.com/submit?url=https://longfangsong.github.io/2019/02/01/高级分页/&title=高级分页"><i class="fab fa-digg " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://www.tumblr.com/share/link?url=https://longfangsong.github.io/2019/02/01/高级分页/&name=高级分页&description="><i class="fab fa-tumblr " aria-hidden="true"></i></a></li>
+</ul>
+
+    </div>
+    <div id="toc">
+      <ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#简介"><span class="toc-number">1.</span> <span class="toc-text">简介</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#访问页表"><span class="toc-number">2.</span> <span class="toc-text">访问页表</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#递归页表"><span class="toc-number">3.</span> <span class="toc-text">递归页表</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#地址计算"><span class="toc-number">3.1.</span> <span class="toc-text">地址计算</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#实现"><span class="toc-number">4.</span> <span class="toc-text">实现</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#地址翻译"><span class="toc-number">5.</span> <span class="toc-text">地址翻译</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#试试看"><span class="toc-number">5.1.</span> <span class="toc-text">试试看</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#RecursivePageTable类型"><span class="toc-number">5.2.</span> <span class="toc-text">RecursivePageTable类型</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#使unsafe的函数safe"><span class="toc-number">5.3.</span> <span class="toc-text">使unsafe的函数safe</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#创建新映射"><span class="toc-number">6.</span> <span class="toc-text">创建新映射</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#Boot-信息"><span class="toc-number">7.</span> <span class="toc-text">Boot 信息</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#entry-point宏"><span class="toc-number">7.1.</span> <span class="toc-text">entry_point宏</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#分配帧"><span class="toc-number">8.</span> <span class="toc-text">分配帧</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#总结"><span class="toc-number">9.</span> <span class="toc-text">总结</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#接下来？"><span class="toc-number">10.</span> <span class="toc-text">接下来？</span></a></li></ol>
+    </div>
+  </span>
+</div>
+
+    
+    <div class="content index py4">
+        
+        <article class="post" itemscope="" itemtype="http://schema.org/BlogPosting">
+  <header>
+    
+    <h1 class="posttitle" itemprop="name headline">
+        高级分页
+    </h1>
+
+
+
+    <div class="meta">
+      <span class="author" itemprop="author" itemscope="" itemtype="http://schema.org/Person">
+        <span itemprop="name">用Rust编写一个操作系统</span>
+      </span>
+      
+    <div class="postdate">
+        <time datetime="2019-02-01T10:21:50.000Z" itemprop="datePublished">2019-02-01</time>
+    </div>
+
+
+      
+
+      
+    <div class="article-tag">
+        <i class="fas fa-tag"></i>
+        <a class="tag-link" href="/Writing_an_OS_in_Rust_zh/tags/Memory-Management/">Memory Management</a>
+    </div>
+
+
+    </div>
+  </header>
+  
+
+  <div class="content" itemprop="articleBody">
+    <h2 id="简介"><a href="#简介" class="headerlink" title="简介"></a>简介</h2><p>在上一篇文章中，我们了解了分页的原理以及x86_64上4级页表的工作原理。我们还发现引导加载程序已经为我们的内核设置了页表层次结构，这意味着我们的内核已经在虚拟地址上运行。这提高了安全性，因为非法内存访问会导致页面错误异常，而不是修改任意物理内存。</p>
+<p>但是，当我们尝试从内核访问页表时会出现问题，因为我们无法直接访问存储在页表条目或<code>CR3</code>寄存器中的物理地址。当我们尝试检查活动页表时，我们在上一篇文章的末尾已经遇到了这个问题。</p>
+<p>下一节将详细讨论该问题，并提供解决方案的不同方法。之后，我们实现了一个遍历页表层次结构的函数，以便将虚拟地址转换为物理地址。最后，我们将学习如何在页表中创建新的映射以及如何查找未使用的内存帧以创建新的页表。</p>
+<h2 id="访问页表"><a href="#访问页表" class="headerlink" title="访问页表"></a>访问页表</h2><p>从我们的内核访问页表并不像看起来那么容易。要理解这个问题，让我们再看一下上一篇文章的示例4级页表层次结构：</p>
+<p><img src="https://d33wubrfki0l68.cloudfront.net/124436854aeff3df13c86c3ffd3f676d3142a267/82b62/paging-introduction/x86_64-page-table-translation.svg" alt="An example 4-level page hierarchy with each page table shown in physical memory"></p>
+<p>这里重要的是每个页面条目存储下一个表的物理地址。这样就不需要为这些地址运行转换，这样可以保证性能，并且不会导致无限的转换循环。</p>
+<p>对我们来说问题是我们不能直接从我们的内核访问物理地址，因为我们的内核也运行在虚拟地址之上。例如，当我们访问地址4KiB时，我们访问虚拟地址4KiB，而不是存储4级页表的物理地址4KiB。当我们想要访问物理地址4KiB时，我们只能通过映射到它的某个虚拟地址来访问它。</p>
+<p>因此，为了访问页表帧，我们需要将一些虚拟页面映射到它们。有不同的方法来创建这些映射，所有这些都允许我们访问任意页表帧：</p>
+<ul>
+<li><p>一个简单的解决方案是<strong>直接映射所有页表</strong>：</p>
+<p><img src="https://os.phil-opp.com/advanced-paging/identity-mapped-page-tables.svg" alt="A virtual and a physical address space with various virtual pages mapped to the physical frame with the same address"></p>
+<p>在此示例中，我们看到页表帧都被直接映射。这样，页表的物理地址就是有效的虚拟地址，这样我们就可以从CR3寄存器开始轻松访问所有级别的页表。</p>
+<p>但是，它使虚拟地址空间变得混乱，并且使得更难以找到更大尺寸的连续存储区域。例如，假设我们想要在上面的图形中创建大小为1000KiB的虚拟存储区域，例如，用于创建文件的内存映射。我们无法在28KiB处启动该区域，因为它将与已经映射的1004MiB页面发生冲突。因此，我们必须一直找，直到找到足够大的未映射区域，例如1008KiB。这与分段一样存在类似的碎片问题。</p>
+<p>同样，它使创建新页表变得更加困难，因为我们需要找到其相应页面尚未使用的物理帧。例如，假设我们为内存映射文件保留了从1008KiB开始的虚拟1000KiB内存区域。现在我们不能再使用物理地址在1000KiB和2008KiB之间的任何帧，因为我们无法直接映射它。</p>
+</li>
+<li><p>或者，我们只能在需要访问它们时暂时映射页表帧。为了能够创建临时映射，我们只需要一个直接映射的1级页表：</p>
+<p><img src="https://os.phil-opp.com/advanced-paging/temporarily-mapped-page-tables.png" alt="A virtual and a physical address space with an identity mapped level 1 table, which maps its 0th entry to the level 2 table frame, thereby mapping that frame to page with address 0"></p>
+<p>此图中的1级页表控制了虚拟地址空间的前2MiB。这是因为可以通过从CR3寄存器开始并在访问4级，3级和2级页表中的第0个条目之后访问它。索引<code>8</code>的条目将地址32KiB处的虚拟页面映射到地址32KiB处的物理帧，从而直接映射1级页表本身。该图形通过32KiB处的水平箭头显示此身份映射。</p>
+<p>通过写入直接映射的1级页表，我们的内核可以创建多达511个临时映射（512减去直接映射所需的条目）。在上面的示例中，内核将1级表的第0个条目映射到地址为24KiB的帧。这创建了虚拟页面在0KiB到2级页表的物理帧的临时映射，由虚线箭头指示。现在，内核可以通过写入从0KiB开始的页面来访问2级页表。</p>
+<p>使用临时映射访问任意页表框架的过程如下：</p>
+<ul>
+<li>在直接映射的1级表中搜索空闲条目。</li>
+<li>将该条目映射到我们要访问的页表的物理帧。</li>
+<li>通过映射到条目的虚拟页面访问目标帧。</li>
+<li>将条目设置回未使用状态，从而再次删除临时映射。</li>
+</ul>
+<p>这种方法可以保持虚拟地址空间的清洁，因为它重用了相同的512个虚拟页面来创建映射。缺点是它有点麻烦，特别是因为新映射可能需要修改多个级别的表，这意味着我们需要多次重复上述过程。</p>
+</li>
+<li><p>虽然上述两种方法都有效，但第三种技术称为递归页表，它结合了它们的优点：它始终保持所有页表帧映射，因此不需要临时映射，并且还将映射页保持在一起以避免碎片化虚拟地址空间。这是我们将用于实现的技术，因此将在下一节中详细介绍。</p>
+</li>
+</ul>
+<h2 id="递归页表"><a href="#递归页表" class="headerlink" title="递归页表"></a>递归页表</h2><p>这种方法背后的想法是将4级页表的一些条目映射到4级表本身。通过这样做，我们有效地保留了虚拟地址空间的一部分，并将所有当前和未来的页表帧映射到该空间。</p>
+<p>让我们通过一个例子来了解这一切是如何工作的：</p>
+<p><img src="https://os.phil-opp.com/advanced-paging/recursive-page-table.png" alt="An example 4-level page hierarchy with each page table shown in physical memory. Entry 511 of the level 4 page is mapped to frame 4KiB, the frame of the level 4 table itself."></p>
+<p>与该帖子开头的示例的唯一区别在于4级表中索引511处的附加条目，其被映射到物理帧4KiB，即4级表本身的帧。</p>
+<p>CPU在翻译有关此条目的地址时，它不会达到3级表，而是再次访问相同级别4的表。这类似于调用自身的递归函数，因此该表称为递归页表。重要的是CPU假定4级表中的每个条目都指向3级表，因此它现在将4级表视为3级表。这是可以的，因为所有级别的表在x86_64上具有完全相同的布局。</p>
+<p>通过在开始实际转换之前递归一次或多次，我们可以有效地缩短CPU遍历的级别数。例如，如果我们遵循递归一次然后进入3级表，则CPU认为3级表是2级表。更进一步，它将2级表视为1级表，将级别1表视为映射到的帧。这意味着我们现在可以读取和写入1级页表，因为CPU认为它是映射到的帧。下图说明了5个翻译步骤：</p>
+<p><img src="https://os.phil-opp.com/advanced-paging/recursive-page-table-access-level-1.png" alt="The above example 4-level page hierarchy with 5 arrows: &quot;Step 0&quot; from CR4 to level 4 table, &quot;Step 1&quot; from level 4 table to level 4 table, &quot;Step 2&quot; from level 4 table to level 3 table, &quot;Step 3&quot; from level 3 table to level 2 table, and &quot;Step 4&quot; from level 2 table to level 1 table."></p>
+<p>类似地，我们可以在开始转换之前递归两次，以将遍历的级别数减少到两个：</p>
+<p><img src="https://os.phil-opp.com/advanced-paging/recursive-page-table-access-level-2.png" alt="The same 4-level page hierarchy with the following 4 arrows: &quot;Step 0&quot; from CR4 to level 4 table, &quot;Steps 1&amp;2&quot; from level 4 table to level 4 table, &quot;Step 3&quot; from level 4 table to level 3 table, and &quot;Step 4&quot; from level 3 table to level 2 table."></p>
+<p>让我们一步一步地完成它：首先，CPU遵循4级表上的递归条目，并认为它达到了3级表。然后它再次跟随递归条目并认为它到达2级表。但实际上，它仍然在4级表上。当CPU现在跟随不同的条目时，它将落在3级表上，但认为它已经在1级表上。因此，当下一个入口指向2级表时，CPU认为它指向映射的帧，这允许我们读取和写入2级表。</p>
+<p>访问级别3和4的表以相同的方式工作。为了访问3级表，我们遵循递归条目三次，欺骗CPU认为它已经在1级表上。然后我们按照另一个条目进入3级表，CPU将其视为映射帧。为了访问4级表本身，我们只需按照递归条目四次，直到CPU将4级表本身视为映射帧（下图中的蓝色）。</p>
+<p><img src="https://os.phil-opp.com/advanced-paging/recursive-page-table-access-level-3.png" alt="The same 4-level page hierarchy with the following 3 arrows: &quot;Step 0&quot; from CR4 to level 4 table, &quot;Steps 1,2,3&quot; from level 4 table to level 4 table, and &quot;Step 4&quot; from level 4 table to level 3 table. In blue the alternative &quot;Steps 1,2,3,4&quot; arrow from level 4 table to level 4 table."></p>
+<p>可能需要花上一些时间来理解这个概念，但实践上这个方法中运作良好。</p>
+<h3 id="地址计算"><a href="#地址计算" class="headerlink" title="地址计算"></a>地址计算</h3><p>我们看到我们可以通过在实际翻译之前递归一次或多次来访问所有级别的表。 由于四个级别的表中的索引直接来自虚拟地址，因此我们需要为此技术构建特殊的虚拟地址。 请记住，页表索引是通过以下方式从地址中得到的：</p>
+<p><img src="https://d33wubrfki0l68.cloudfront.net/55d00a7a89ddaf126f40bb1414de0d78fcde09e4/478a7/paging-introduction/x86_64-table-indices-from-address.svg" alt="Bits 0–12 are the page offset, bits 12–21 the level 1 index, bits 21–30 the level 2 index, bits 30–39 the level 3 index, and bits 39–48 the level 4 index"></p>
+<p>假设我们想要访问映射特定页面的1级页表。 如上所述，这意味着在继续使用4级，3级和2级索引之前，我们必须递归一次。 为此，我们将地址的每个块向右移动一个块，并将原始的4级索引设置为递归条目的索引：</p>
+<p><img src="https://os.phil-opp.com/advanced-paging/table-indices-from-address-recursive-level-1.svg" alt="Bits 0–12 are the offset into the level 1 table frame, bits 12–21 the level 2 index, bits 21–30 the level 3 index, bits 30–39 the level 4 index, and bits 39–48 the index of the recursive entry"></p>
+<p>为了访问该页面的2级页表，我们将每个索引块向右移动两个块，并将原来的4级索引和原来的3级索引的块都设置为递归条目的索引：</p>
+<p><img src="https://os.phil-opp.com/advanced-paging/table-indices-from-address-recursive-level-2.svg" alt="Bits 0–12 are the offset into the level 2 table frame, bits 12–21 the level 3 index, bits 21–30 the level 4 index, and bits 30–39 and bits 39–48 are the index of the recursive entry"></p>
+<p>访问3级表的方法是将每个块向右移动三个块，并使用原来的4级，3级和2级地址块的递归索引：</p>
+<p><img src="https://os.phil-opp.com/advanced-paging/table-indices-from-address-recursive-level-3.svg" alt="Bits 0–12 are the offset into the level 3 table frame, bits 12–21 the level 4 index, and bits 21–30, bits 30–39 and bits 39–48 are the index of the recursive entry"></p>
+<p>最后，我们可以通过向右移动每个块四个块并使用除偏移之外的所有地址块的递归索引来访问4级表：</p>
+<p><img src="https://os.phil-opp.com/advanced-paging/table-indices-from-address-recursive-level-4.svg" alt="Bits 0–12 are the offset into the level l table frame and bits 12–21, bits 21–30, bits 30–39 and bits 39–48 are the index of the recursive entry"></p>
+<p>我们现在可以计算所有四个级别的页表的虚拟地址。 我们甚至可以通过将其索引乘以8（页表条目的大小）来计算精确指向特定页表条目的地址。</p>
+<p>下表总结了访问不同类型帧的地址结构：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>虚拟地址的结构(八进制)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>页</td>
+<td><code>0o_SSSSSS_AAA_BBB_CCC_DDD_EEEE</code></td>
+</tr>
+<tr>
+<td>1级页表项</td>
+<td><code>0o_SSSSSS_RRR_AAA_BBB_CCC_DDDD</code></td>
+</tr>
+<tr>
+<td>2级页表项</td>
+<td><code>0o_SSSSSS_RRR_RRR_AAA_BBB_CCCC</code></td>
+</tr>
+<tr>
+<td>3级页表项</td>
+<td><code>0o_SSSSSS_RRR_RRR_RRR_AAA_BBBB</code></td>
+</tr>
+<tr>
+<td>4级页表项</td>
+<td><code>0o_SSSSSS_RRR_RRR_RRR_RRR_AAAA</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>AAA</code>是4级索引，<code>BBB</code>是3级索引，<code>CCC</code>是2级索引，<code>DDD</code>是映射帧的1级索引，而<code>EEEE</code>是偏移量。 <code>RRR</code>是递归条目的索引。 当索引（三位数）转换为偏移量（四位数）时，通过将其乘以8（页面表条目的大小）来完成。使用此偏移量，结果地址直接指向相应的页表条目。</p>
+<p><code>SSSSSS</code>是符号扩展位，这意味着它们都是第47位的副本。这是x86_64体系结构上对有效地址的特殊要求。 我们在上一篇文章中解释过它。</p>
+<p>我们使用八进制数来表示地址，因为每个八进制字符代表三位，这使我们能够清楚地分离不同页表级别的9位索引。 对于每个字符代表四位的十六进制系统，这是不可能的。</p>
+<h2 id="实现"><a href="#实现" class="headerlink" title="实现"></a>实现</h2><p>在听了这些个理论之后我们终于可以开始实践了。 方便的是，bootloader程序不仅为我们的内核创建了页表，而且还在第4级页表的最后一个条目中创建了一个递归映射。 引导程序执行此操作是因为否则会出现先有鸡还是先有蛋的问题：我们需要访问4级页表来创建递归映射，但是如果没有某种映射我们就无法访问它。</p>
+<p>我们已经在上一篇文章的末尾使用了这个递归映射来访问4级表。 我们通过硬编码地址<code>0xffff_ffff_ffff_f000</code>完成了这项工作。 当我们将这个地址转换为八进制并将其与上面的表进行比较时，我们可以看到它完全遵循4级表条目的结构，其中<code>RRR</code> = <code>0o777</code>，<code>AAAA</code> = 0，并且符号扩展位全部设置为<code>1</code>：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">structure: 0o_SSSSSS_RRR_RRR_RRR_RRR_AAAA</span><br><span class="line">address:   0o_177777_777_777_777_777_0000</span><br></pre></td></tr></table></figure>
+<p>凭借我们对递归页表的了解，我们现在可以创建虚拟地址来访问所有活动页表。 这允许我们在软件中创建翻译功能。</p>
+<h2 id="地址翻译"><a href="#地址翻译" class="headerlink" title="地址翻译"></a>地址翻译</h2><p>第一步，让我们创建一个函数，通过遍历页表层次结构将虚拟地址转换为物理地址：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// in src/lib.rs</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">pub</span> <span class="keyword">mod</span> memory;</span><br></pre></td></tr></table></figure>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// in src/memory.rs</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">use</span> x86_64::PhysAddr;</span><br><span class="line"><span class="keyword">use</span> x86_64::structures::paging::PageTable;</span><br><span class="line"></span><br><span class="line"><span class="comment">/// Returns the physical address for the given virtual address, or `None` if the</span></span><br><span class="line"><span class="comment">/// virtual address is not mapped.</span></span><br><span class="line"><span class="keyword">pub</span> <span class="function"><span class="keyword">fn</span> <span class="title">translate_addr</span></span>(addr: <span class="built_in">usize</span>, level_4_table_addr: <span class="built_in">usize</span>) -&gt; <span class="built_in">Option</span>&lt;PhysAddr&gt; &#123;</span><br><span class="line">    <span class="comment">// retrieve the page table indices of the address that we want to translate</span></span><br><span class="line">    <span class="keyword">let</span> level_4_index = (addr &gt;&gt; <span class="number">39</span>) &amp; <span class="number">0o777</span>;</span><br><span class="line">    <span class="keyword">let</span> level_3_index = (addr &gt;&gt; <span class="number">30</span>) &amp; <span class="number">0o777</span>;</span><br><span class="line">    <span class="keyword">let</span> level_2_index = (addr &gt;&gt; <span class="number">21</span>) &amp; <span class="number">0o777</span>;</span><br><span class="line">    <span class="keyword">let</span> level_1_index = (addr &gt;&gt; <span class="number">12</span>) &amp; <span class="number">0o777</span>;</span><br><span class="line">    <span class="keyword">let</span> page_offset = addr &amp; <span class="number">0o7777</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// check that level 4 entry is mapped</span></span><br><span class="line">    <span class="keyword">let</span> level_4_table = <span class="keyword">unsafe</span> &#123;&amp;*(level_4_table_addr <span class="keyword">as</span> *<span class="keyword">const</span> PageTable)&#125;;</span><br><span class="line">    <span class="keyword">if</span> level_4_table[level_4_index].addr().is_null() &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">None</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">let</span> level_3_table_addr = (level_4_table_addr &lt;&lt; <span class="number">9</span>) | (level_4_index &lt;&lt; <span class="number">12</span>);</span><br><span class="line"></span><br><span class="line">    <span class="comment">// check that level 3 entry is mapped</span></span><br><span class="line">    <span class="keyword">let</span> level_3_table = <span class="keyword">unsafe</span> &#123;&amp;*(level_3_table_addr <span class="keyword">as</span> *<span class="keyword">const</span> PageTable)&#125;;</span><br><span class="line">    <span class="keyword">if</span> level_3_table[level_3_index].addr().is_null() &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">None</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">let</span> level_2_table_addr = (level_3_table_addr &lt;&lt; <span class="number">9</span>) | (level_3_index &lt;&lt; <span class="number">12</span>);</span><br><span class="line"></span><br><span class="line">    <span class="comment">// check that level 2 entry is mapped</span></span><br><span class="line">    <span class="keyword">let</span> level_2_table = <span class="keyword">unsafe</span> &#123;&amp;*(level_2_table_addr <span class="keyword">as</span> *<span class="keyword">const</span> PageTable)&#125;;</span><br><span class="line">    <span class="keyword">if</span> level_2_table[level_2_index].addr().is_null() &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">None</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">let</span> level_1_table_addr = (level_2_table_addr &lt;&lt; <span class="number">9</span>) | (level_2_index &lt;&lt; <span class="number">12</span>);</span><br><span class="line"></span><br><span class="line">    <span class="comment">// check that level 1 entry is mapped and retrieve physical address from it</span></span><br><span class="line">    <span class="keyword">let</span> level_1_table = <span class="keyword">unsafe</span> &#123;&amp;*(level_1_table_addr <span class="keyword">as</span> *<span class="keyword">const</span> PageTable)&#125;;</span><br><span class="line">    <span class="keyword">let</span> phys_addr = level_1_table[level_1_index].addr();</span><br><span class="line">    <span class="keyword">if</span> phys_addr.is_null() &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">None</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="literal">Some</span>(phys_addr + page_offset)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>首先，我们通过位操作计算页表索引和页面偏移量，如图中所示：</p>
+<p><img src="https://d33wubrfki0l68.cloudfront.net/55d00a7a89ddaf126f40bb1414de0d78fcde09e4/478a7/paging-introduction/x86_64-table-indices-from-address.svg" alt="Bits 0–12 are the page offset, bits 12–21 the level 1 index, bits 21–30 the level 2 index, bits 30–39 the level 3 index, and bits 39–48 the level 4 index"></p>
+<p>然后我们将<code>level_4_table_addr</code>转换为PageTable引用，这是一个<code>unsafe</code>操作，因为编译器无法知道该地址是有效的。我们使用索引运算符来查看具有<code>level_4_index</code>的条目。如果该条目为null，则此级别4条目没有级别3表，这意味着addr未映射到任何物理内存，因此我们返回<code>None</code>。</p>
+<p>如果条目不是<code>None</code>，我们知道存在3级表。我们通过将4级地址向左移位9位并将地址位12-21设置为4级索引来计算它的虚拟地址（参见有关地址计算的部分）。我们可以这样做，因为递归索引是<code>0o777</code>，符号扩展也是有效的。然后，我们进行与4级表相同的强制转换和条目检查。</p>
+<p>在我们检查了三个级别的页面之后，我们最终可以读取1级表的条目，该表告诉我们地址映射到的物理帧。作为最后一步，我们将页面偏移量添加到该地址并返回它。</p>
+<p>如果我们知道地址已映射，我们可以直接访问1级表，而无需先查看更高级别的页面。但由于我们不知道这一点，我们必须先检查1级表是否存在，否则我们的函数会导致未映射地址的页面错误。</p>
+<h3 id="试试看"><a href="#试试看" class="headerlink" title="试试看"></a>试试看</h3><p>我们可以使用新的翻译功能在我们的<code>_start</code>函数中翻译一些虚拟地址：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// in src/main.rs</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#[cfg(not(test))]</span></span><br><span class="line"><span class="meta">#[no_mangle]</span></span><br><span class="line"><span class="keyword">pub</span> <span class="keyword">extern</span> <span class="string">"C"</span> <span class="function"><span class="keyword">fn</span> <span class="title">_start</span></span>() -&gt; ! &#123;</span><br><span class="line">    […] <span class="comment">// initialize GDT, IDT, PICS</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">use</span> blog_os::memory::translate_addr;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">const</span> LEVEL_4_TABLE_ADDR: <span class="built_in">usize</span> = <span class="number">0o_177777_777_777_777_777_0000</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// the identity-mapped vga buffer page</span></span><br><span class="line">    <span class="built_in">println!</span>(<span class="string">"0xb8000 -&gt; &#123;:?&#125;"</span>, translate_addr(<span class="number">0xb8000</span>, LEVEL_4_TABLE_ADDR));</span><br><span class="line">    <span class="comment">// some code page</span></span><br><span class="line">    <span class="built_in">println!</span>(<span class="string">"0x20010a -&gt; &#123;:?&#125;"</span>, translate_addr(<span class="number">0x20010a</span>, LEVEL_4_TABLE_ADDR));</span><br><span class="line">    <span class="comment">// some stack page</span></span><br><span class="line">    <span class="built_in">println!</span>(<span class="string">"0x57ac001ffe48 -&gt; &#123;:?&#125;"</span>, translate_addr(<span class="number">0x57ac001ffe48</span>,</span><br><span class="line">        LEVEL_4_TABLE_ADDR));</span><br><span class="line"></span><br><span class="line">    <span class="built_in">println!</span>(<span class="string">"It did not crash!"</span>);</span><br><span class="line">    blog_os::hlt_loop();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>当我们运行这段程序时，我们会看到下面的输出：</p>
+<p><img src="https://os.phil-opp.com/advanced-paging/qemu-translate-addr.png" alt="0xb8000 -&gt; 0xb8000, 0x20010a -&gt; 0x40010a, 0x57ac001ffe48 -&gt; 0x27be48"></p>
+<p>正如所料，直接映射地址<code>0xb8000</code>转换为相同的物理地址。 代码页和堆栈页面转换为一些“随机”的物理地址，这取决于引导加载程序如何为我们的内核创建初始映射。</p>
+<h3 id="RecursivePageTable类型"><a href="#RecursivePageTable类型" class="headerlink" title="RecursivePageTable类型"></a><code>RecursivePageTable</code>类型</h3><p><code>x86_64</code>提供了一个<code>RecursivePageTable</code>类型，它为各种页表操作实现了安全的抽象。 通过使用此类型，我们可以以更清晰的方式重新实现<code>translate_addr</code>函数：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// in src/memory.rs</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">use</span> x86_64::structures::paging::&#123;Mapper, Page, PageTable, RecursivePageTable&#125;;</span><br><span class="line"><span class="keyword">use</span> x86_64::&#123;VirtAddr, PhysAddr&#125;;</span><br><span class="line"></span><br><span class="line"><span class="comment">/// Creates a RecursivePageTable instance from the level 4 address.</span></span><br><span class="line"><span class="comment">///</span></span><br><span class="line"><span class="comment">/// This function is unsafe because it can break memory safety if an invalid</span></span><br><span class="line"><span class="comment">/// address is passed.</span></span><br><span class="line"><span class="keyword">pub</span> <span class="keyword">unsafe</span> <span class="function"><span class="keyword">fn</span> <span class="title">init</span></span>(level_4_table_addr: <span class="built_in">usize</span>) -&gt; RecursivePageTable&lt;<span class="symbol">'static</span>&gt; &#123;</span><br><span class="line">    <span class="keyword">let</span> level_4_table_ptr = level_4_table_addr <span class="keyword">as</span> *<span class="keyword">mut</span> PageTable;</span><br><span class="line">    <span class="keyword">let</span> level_4_table = &amp;<span class="keyword">mut</span> *level_4_table_ptr;</span><br><span class="line">    RecursivePageTable::new(level_4_table).unwrap()</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">/// Returns the physical address for the given virtual address, or `None` if</span></span><br><span class="line"><span class="comment">/// the virtual address is not mapped.</span></span><br><span class="line"><span class="keyword">pub</span> <span class="function"><span class="keyword">fn</span> <span class="title">translate_addr</span></span>(addr: <span class="built_in">u64</span>, recursive_page_table: &amp;RecursivePageTable)</span><br><span class="line">    -&gt; <span class="built_in">Option</span>&lt;PhysAddr&gt;</span><br><span class="line">&#123;</span><br><span class="line">    <span class="keyword">let</span> addr = VirtAddr::new(addr);</span><br><span class="line">    <span class="keyword">let</span> page: Page = Page::containing_address(addr);</span><br><span class="line"></span><br><span class="line">    <span class="comment">// perform the translation</span></span><br><span class="line">    <span class="keyword">let</span> frame = recursive_page_table.translate_page(page);</span><br><span class="line">    frame.map(|frame| frame.start_address() + <span class="built_in">u64</span>::from(addr.page_offset()))</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>RecursivePageTable</code>类型完全封装了页面表访问的不安全性，因此我们不再需要在<code>translate_addr</code>函数中使用<code>unsafe</code>。 <code>init</code>函数需要<code>unsafe</code>，因为调用者必须保证传递的<code>level_4_table_addr</code>有效。</p>
+<p>我们的<code>_start</code>函数需要通过以下方式更新为新的函数签名：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// in src/main.rs</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#[cfg(not(test))]</span></span><br><span class="line"><span class="meta">#[no_mangle]</span></span><br><span class="line"><span class="keyword">pub</span> <span class="keyword">extern</span> <span class="string">"C"</span> <span class="function"><span class="keyword">fn</span> <span class="title">_start</span></span>() -&gt; ! &#123;</span><br><span class="line">    […] <span class="comment">// initialize GDT, IDT, PICS</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">use</span> blog_os::memory::&#123;<span class="keyword">self</span>, translate_addr&#125;;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">const</span> LEVEL_4_TABLE_ADDR: <span class="built_in">usize</span> = <span class="number">0o_177777_777_777_777_777_0000</span>;</span><br><span class="line">    <span class="keyword">let</span> recursive_page_table = <span class="keyword">unsafe</span> &#123; memory::init(LEVEL_4_TABLE_ADDR) &#125;;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// the identity-mapped vga buffer page</span></span><br><span class="line">    <span class="built_in">println!</span>(<span class="string">"0xb8000 -&gt; &#123;:?&#125;"</span>, translate_addr(<span class="number">0xb8000</span>, &amp;recursive_page_table));</span><br><span class="line">    <span class="comment">// some code page</span></span><br><span class="line">    <span class="built_in">println!</span>(<span class="string">"0x20010a -&gt; &#123;:?&#125;"</span>, translate_addr(<span class="number">0x20010a</span>, &amp;recursive_page_table));</span><br><span class="line">    <span class="comment">// some stack page</span></span><br><span class="line">    <span class="built_in">println!</span>(<span class="string">"0x57ac001ffe48 -&gt; &#123;:?&#125;"</span>, translate_addr(<span class="number">0x57ac001ffe48</span>,</span><br><span class="line">        &amp;recursive_page_table));</span><br><span class="line"></span><br><span class="line">    <span class="built_in">println!</span>(<span class="string">"It did not crash!"</span>);</span><br><span class="line">    blog_os::hlt_loop();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>我们现在将传递<code>RecursivePageTable</code>类型的引用，而不是<code>LEVEL_4_TABLE_ADDR</code>传递给<code>translate_addr</code>并通过不安全的原始指针访问页表。通过这样做，我们现在拥有安全的抽象和明确的所有权语义。这确保了我们不会意外地同时修改页表，因为需要借用<code>RecursivePageTable</code>来修改它。</p>
+<p>当我们运行它时，我们会看到与手工制作的翻译函数相同的结果。</p>
+<h3 id="使unsafe的函数safe"><a href="#使unsafe的函数safe" class="headerlink" title="使unsafe的函数safe"></a>使<code>unsafe</code>的函数safe</h3><p>我们的<code>memory::init</code>函数是一个<code>unsafe</code>的函数，这意味着调用它需要一个<code>unsafe</code>块，因为调用者必须保证满足某些要求。在我们的例子中，要求是传递的地址被映射到4级页表的物理帧。</p>
+<p><code>unsafe</code>函数的第二个属性是它们的整个的函数体都被视为<code>unsafe</code>块，这意味着它可以执行各种不安全操作而无需额外的<code>unsafe</code>块。这就是我们不需要一个<code>unsafe</code>块来解引用裸指针<code>level_4_table_ptr</code>的原因：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">pub</span> <span class="keyword">unsafe</span> <span class="function"><span class="keyword">fn</span> <span class="title">init</span></span>(level_4_table_addr: <span class="built_in">usize</span>) -&gt; RecursivePageTable&lt;<span class="symbol">'static</span>&gt; &#123;</span><br><span class="line">    <span class="keyword">let</span> level_4_table_ptr = level_4_table_addr <span class="keyword">as</span> *<span class="keyword">mut</span> PageTable;</span><br><span class="line">    <span class="keyword">let</span> level_4_table = &amp;<span class="keyword">mut</span> *level_4_table_ptr; <span class="comment">// &lt;- this operation is unsafe</span></span><br><span class="line">    RecursivePageTable::new(level_4_table).unwrap()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这样做的问题是我们不会立即看到代码的哪些部分是<code>unsafe</code>的。 例如，如果不查看其定义，我们不知道<code>RecursivePageTable::new</code>函数是否不安全。 这使得在不注意的情况下很容易意外地做一些<code>unsafe</code>的事情。</p>
+<p>为了避免这个问题，我们可以添加一个安全的内部函数：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// in src/memory.rs</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">pub</span> <span class="keyword">unsafe</span> <span class="function"><span class="keyword">fn</span> <span class="title">init</span></span>(level_4_table_addr: <span class="built_in">usize</span>) -&gt; RecursivePageTable&lt;<span class="symbol">'static</span>&gt; &#123;</span><br><span class="line">    <span class="comment">/// Rust currently treats the whole body of unsafe functions as an unsafe</span></span><br><span class="line">    <span class="comment">/// block, which makes it difficult to see which operations are unsafe. To</span></span><br><span class="line">    <span class="comment">/// limit the scope of unsafe we use a safe inner function.</span></span><br><span class="line">    <span class="function"><span class="keyword">fn</span> <span class="title">init_inner</span></span>(level_4_table_addr: <span class="built_in">usize</span>) -&gt; RecursivePageTable&lt;<span class="symbol">'static</span>&gt; &#123;</span><br><span class="line">        <span class="keyword">let</span> level_4_table_ptr = level_4_table_addr <span class="keyword">as</span> *<span class="keyword">mut</span> PageTable;</span><br><span class="line">        <span class="keyword">let</span> level_4_table = <span class="keyword">unsafe</span> &#123; &amp;<span class="keyword">mut</span> *level_4_table_ptr &#125;;</span><br><span class="line">        RecursivePageTable::new(level_4_table).unwrap()</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    init_inner(level_4_table_addr)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>现在再次需要一个<code>unsafe</code>块来解引用<code>level_4_table_ptr</code>，我们立即看到这是该函数中唯一<code>unsafe</code>的操作。目前有一个开放的<a href="https://github.com/rust-lang/rfcs/pull/2585" target="_blank" rel="noopener">RFC</a>来改变这种不安全功能的不幸属性，这将使我们能够避免上述样板代码。</p>
+<h2 id="创建新映射"><a href="#创建新映射" class="headerlink" title="创建新映射"></a>创建新映射</h2><p>读取页表并创建转换函数后，下一步是在页表层次结构中创建新映射。</p>
+<p>创建新映射的难度取决于我们要映射的虚拟页面。在最简单的情况下，页面的1级页表已经存在，我们只需要编写一个条目。在最困难的情况下，页面位于尚未存在3级页表的内存区域，因此我们需要首先创建新的3级，2级和1级页表。</p>
+<p>让我们从简单的情况开始，假设我们不需要创建新的页表。bootloader程序将自身加载到虚拟地址空间的第一个兆字节中，因此我们知道该区域存在有效的1级表。我们可以在此内存区域中选择任何未使用的页面作为示例映射，例如，地址为<code>0x1000</code>的页面。作为目标帧，我们使用<code>0xb8000</code>，即VGA文本缓冲区的帧。这样我们就可以轻松测试我们的映射是否有效。</p>
+<p>我们在内存模块中的一个新的<code>create_mapping</code>函数中实现它：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// in src/memory.rs</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">use</span> x86_64::structures::paging::&#123;FrameAllocator, PhysFrame, Size4KiB&#125;;</span><br><span class="line"></span><br><span class="line"><span class="keyword">pub</span> <span class="function"><span class="keyword">fn</span> <span class="title">create_example_mapping</span></span>(</span><br><span class="line">    recursive_page_table: &amp;<span class="keyword">mut</span> RecursivePageTable,</span><br><span class="line">    frame_allocator: &amp;<span class="keyword">mut</span> <span class="keyword">impl</span> FrameAllocator&lt;Size4KiB&gt;,</span><br><span class="line">) &#123;</span><br><span class="line">    <span class="keyword">use</span> x86_64::structures::paging::PageTableFlags <span class="keyword">as</span> Flags;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">let</span> page: Page = Page::containing_address(VirtAddr::new(<span class="number">0x1000</span>));</span><br><span class="line">    <span class="keyword">let</span> frame = PhysFrame::containing_address(PhysAddr::new(<span class="number">0xb8000</span>));</span><br><span class="line">    <span class="keyword">let</span> flags = Flags::PRESENT | Flags::WRITABLE;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">let</span> map_to_result = <span class="keyword">unsafe</span> &#123;</span><br><span class="line">        recursive_page_table.map_to(page, frame, flags, frame_allocator)</span><br><span class="line">    &#125;;</span><br><span class="line">    map_to_result.expect(<span class="string">"map_to failed"</span>).flush();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>该函数接受<code>RecursivePageTable</code>的可变引用，因为它需要修改它，它还接受一个下面会解释的<code>FrameAllocator</code>。然后，它使用<code>Mapper</code> trait的<code>map_to</code>函数将地址<code>0x1000</code>处的页面映射到地址<code>0xb8000</code>处的物理帧。该函数是<code>unsafe</code>的，因为可以使用无效参数破坏内存安全性。</p>
+<p>除了<code>page</code>和<code>frame</code>参数之外，<code>map_to</code>函数还需要两个参数。第三个参数是页表条目的一组标志。我们设置<code>PRESENT</code>标志，因为它是所有有效条目所必需的，而<code>WRITABLE</code>标志使映射页面可写。</p>
+<p>第四个参数需要是一些实现<code>FrameAllocator</code> trait的结构。<code>map_to</code>方法需要此参数，因为它可能需要未使用的帧来创建新的页表。需要trait实现中的<code>Size4KiB</code>参数，因为<code>Page</code>和<code>PhysFrame</code>类型在<code>PageSize</code>trait上是通用的，可以使用标准的4KiB页面和2MiB/1GiB页面。</p>
+<p><code>map_to</code>函数可能失败，因此会返回<code>Result</code>。由于这只是一些不需要健壮性的示例代码，我们只是在发生错误时使用<code>expect</code>来触发一个panic。成功时，该函数返回一个<code>MapperFlush</code>类型，该类型提供了一种使用<code>flush</code>方法从转换后备缓冲区（TLB）中刷新新映射页面的简便方法。与<code>Result</code>类似，当我们意外忘记使用它时，这个类型使用<code>#[must_use]</code>属性发出警告。</p>
+<p>由于我们知道地址<code>0x1000</code>不需要新的页表，因此总是返回<code>None</code>的帧分配器就足够了。我们创建了一个<code>EmptyFrameAllocator</code>来测试我们的映射函数：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// in src/memory.rs</span></span><br><span class="line"></span><br><span class="line"><span class="comment">/// A FrameAllocator that always returns `None`.</span></span><br><span class="line"><span class="keyword">pub</span> <span class="class"><span class="keyword">struct</span> <span class="title">EmptyFrameAllocator</span></span>;</span><br><span class="line"></span><br><span class="line"><span class="keyword">impl</span> FrameAllocator&lt;Size4KiB&gt; <span class="keyword">for</span> EmptyFrameAllocator &#123;</span><br><span class="line">    <span class="function"><span class="keyword">fn</span> <span class="title">allocate_frame</span></span>(&amp;<span class="keyword">mut</span> <span class="keyword">self</span>) -&gt; <span class="built_in">Option</span>&lt;PhysFrame&gt; &#123;</span><br><span class="line">        <span class="literal">None</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>（如果看见报错：’method allocate_frame is not a member of trait FrameAllocator’，则需要将<code>x86_64</code>更新为0.4.0版。）</p>
+<p>我们现在可以在main.rs中测试新的映射函数：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// in src/main.rs</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#[cfg(not(test))]</span></span><br><span class="line"><span class="meta">#[no_mangle]</span></span><br><span class="line"><span class="keyword">pub</span> <span class="keyword">extern</span> <span class="string">"C"</span> <span class="function"><span class="keyword">fn</span> <span class="title">_start</span></span>() -&gt; ! &#123;</span><br><span class="line">    […] <span class="comment">// initialize GDT, IDT, PICS</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">use</span> blog_os::memory::&#123;create_example_mapping, EmptyFrameAllocator&#125;;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">const</span> LEVEL_4_TABLE_ADDR: <span class="built_in">usize</span> = <span class="number">0o_177777_777_777_777_777_0000</span>;</span><br><span class="line">    <span class="keyword">let</span> <span class="keyword">mut</span> recursive_page_table = <span class="keyword">unsafe</span> &#123; memory::init(LEVEL_4_TABLE_ADDR) &#125;;</span><br><span class="line"></span><br><span class="line">    create_example_mapping(&amp;<span class="keyword">mut</span> recursive_page_table, &amp;<span class="keyword">mut</span> EmptyFrameAllocator);</span><br><span class="line">    <span class="keyword">unsafe</span> &#123; (<span class="number">0x1900</span> <span class="keyword">as</span> *<span class="keyword">mut</span> <span class="built_in">u64</span>).write_volatile(<span class="number">0xf021f077f065f04e</span>)&#125;;</span><br><span class="line"></span><br><span class="line">    <span class="built_in">println!</span>(<span class="string">"It did not crash!"</span>);</span><br><span class="line">    blog_os::hlt_loop();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>我们首先通过调用接受<code>RecursivePageTable</code>实例的可变引用的<code>create_example_mapping</code>函数为<code>0x1000</code>创建页面映射。 这将页面<code>0x1000</code>映射到VGA文本缓冲区，因此我们应该在屏幕上看到对它的任何写入。</p>
+<p>然后我们将值<code>0xf021f077f065f04e</code>写入此页面，该页面代表白色背景上的字符串”New！”。 我们不直接将数据写入<code>0x1000</code>页面的开头，因为那一行会被下一个println移出屏幕。 相反，我们写入偏移量<code>0x900</code>，它位于屏幕中间。 正如我们在“VGA文本模式”帖子中所了解到的，对VGA缓冲区的写入应该是volatile的，因此我们使用<code>write_volatile</code>方法。</p>
+<p>当我们在QEMU中运行它时，我们会看到以下输出：</p>
+<p><img src="https://os.phil-opp.com/advanced-paging/qemu-new-mapping.png" alt="QEMU printing &quot;It did not crash!&quot; with four completely white cells in the middle of the screen"></p>
+<p>屏幕上的”New!”是我们写入0x1900的结果，这意味着我们在页表中成功创建了一个新的映射。</p>
+<p>这能起作用，因为已经有一个用于映射页面0x1000的1级表。 当我们尝试映射一个尚未存在1级表的页面时，map_to函数会失败，因为它尝试从<code>EmptyFrameAllocator</code>分配帧以创建新的页表。 我们可以看到，当我们尝试映射页面<code>0xdeadbeaf000</code>而不是<code>0x1000</code>时会发生这种情况：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// in src/memory.rs</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">pub</span> <span class="function"><span class="keyword">fn</span> <span class="title">create_example_mapping</span></span>(…) &#123;</span><br><span class="line">    […]</span><br><span class="line">    <span class="keyword">let</span> page: Page = Page::containing_address(VirtAddr::new(<span class="number">0xdeadbeaf000</span>));</span><br><span class="line">    […]</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// in src/main.rs</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#[no_mangle]</span></span><br><span class="line"><span class="keyword">pub</span> <span class="keyword">extern</span> <span class="string">"C"</span> <span class="function"><span class="keyword">fn</span> <span class="title">_start</span></span>() -&gt; ! &#123;</span><br><span class="line">    […]</span><br><span class="line">    <span class="keyword">unsafe</span> &#123; (<span class="number">0xdeadbeaf900</span> <span class="keyword">as</span> *<span class="keyword">mut</span> <span class="built_in">u64</span>).write_volatile(<span class="number">0xf021f077f065f04e</span>)&#125;;</span><br><span class="line">    […]</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>当我们运行这一段的时候，程序panic了，输出了下面的错误信息：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">panicked at 'map_to failed: FrameAllocationFailed', /…/result.rs:999:5</span><br></pre></td></tr></table></figure>
+<p>要映射没有1级页表的页面，我们需要创建一个合适的FrameAllocator`。 但是，我们如何知道哪些帧未使用以及可用的物理内存量是多少？</p>
+<h2 id="Boot-信息"><a href="#Boot-信息" class="headerlink" title="Boot 信息"></a>Boot 信息</h2><p>由VGA硬件等设备保留的物理内存量和内存区域在不同的机器之间有所不同。 只有BIOS或UEFI固件确切地知道操作系统可以使用哪些存储区域以及哪些区域被保留。 两种固件标准都提供了检索内存映射的功能，但它们只能在引导过程中被调用。 因此，bootloader程序已经从固件中查询此信息和其他信息。</p>
+<p>要将此信息传递给我们的内核，引导加载程序在调用<code>_start</code>函数时将引导信息结构的引用作为参数传给。 现在我们没有在我们的函数中声明这个参数，所以它被忽略了。 我们来添加它：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// in src/main.rs</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">use</span> bootloader::bootinfo::BootInfo;</span><br><span class="line"></span><br><span class="line"><span class="meta">#[cfg(not(test))]</span></span><br><span class="line"><span class="meta">#[no_mangle]</span></span><br><span class="line"><span class="keyword">pub</span> <span class="keyword">extern</span> <span class="string">"C"</span> <span class="function"><span class="keyword">fn</span> <span class="title">_start</span></span>(boot_info: &amp;<span class="symbol">'static</span> BootInfo) -&gt; ! &#123; <span class="comment">// new argument</span></span><br><span class="line">    […]</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>BootInfo</code>结构体仍处于开发的早期阶段，因此在更新到未来的bootloader程序时会可能会出现一些破坏。它目前有三个字段<code>p4_table_addr</code>，<code>memory_map</code>和<code>package</code>：</p>
+<ul>
+<li><code>p4_table_addr</code>字段包含4级页表的递归虚拟地址。通过使用此字段，我们可以避免硬编码地址<code>0o_177777_777_777_777_777_0000</code>。</li>
+<li><code>memory_map</code>字段对我们来说是最有趣的，因为它包含所有内存区域及其类型的列表（即未使用，保留或其他）。</li>
+<li><code>package</code>字段是一个正在开发中的的功能，用于将其他数据与引导加载程序捆绑在一起。实现尚未完成，因此我们暂时可以忽略此字段。</li>
+</ul>
+<p>在我们使用<code>memory_map</code>字段创建正确的<code>FrameAllocator</code>之前，我们要确保不能使用错误类型的<code>boot_info</code>参数。</p>
+<h3 id="entry-point宏"><a href="#entry-point宏" class="headerlink" title="entry_point宏"></a><code>entry_point</code>宏</h3><p>由于我们的<code>_start</code>函数是从引导加载程序外部调用的，因此不会检查我们的函数签名。这意味着我们可以让它在没有任何编译错误的情况下接受任意参数，但它会在运行时失败或导致未定义的行为。</p>
+<p>为了确保入口点函数始终具有引导加载程序所需的正确签名，<code>bootloader</code> crate提供了一个<code>entry_point</code>宏，该宏提供了一种类型检查方式，用于将Rust函数定义为入口点。让我们重写我们的入口点函数来使用这个宏：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// in src/main.rs</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">use</span> bootloader::&#123;bootinfo::BootInfo, entry_point&#125;;</span><br><span class="line"></span><br><span class="line">entry_point!(kernel_main);</span><br><span class="line"></span><br><span class="line"><span class="meta">#[cfg(not(test))]</span></span><br><span class="line"><span class="function"><span class="keyword">fn</span> <span class="title">kernel_main</span></span>(boot_info: &amp;<span class="symbol">'static</span> BootInfo) -&gt; ! &#123;</span><br><span class="line">    […] <span class="comment">// initialize GDT, IDT, PICS</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">let</span> <span class="keyword">mut</span> recursive_page_table = <span class="keyword">unsafe</span> &#123;</span><br><span class="line">        memory::init(boot_info.p4_table_addr <span class="keyword">as</span> <span class="built_in">usize</span>)</span><br><span class="line">    &#125;;</span><br><span class="line"></span><br><span class="line">    […] <span class="comment">// create and test example mapping</span></span><br><span class="line"></span><br><span class="line">    <span class="built_in">println!</span>(<span class="string">"It did not crash!"</span>);</span><br><span class="line">    blog_os::hlt_loop();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>我们不再需要为我们的入口点使用<code>extern 
+&quot;C&quot;</code>或<code>no_mangle</code>，因为宏为我们定义了真正的底层<code>_start</code>入口点。<code>kernel_main</code>函数现在是一个完全正常的Rust函数，因此我们可以为它选择一个任意名称。 重要的是它是有类型检查的，以便当我们现在尝试以任何方式修改函数签名时发生编译错误，例如添加参数或更改参数类型。</p>
+<p>请注意，我们现在将<code>boot_info.p4_table_addr</code>而不是硬编码地址传递给<code>memory::init</code>。 因此，即使未来版本的引导加载程序选择4级页表的不同条目进行递归映射，我们的代码仍会继续工作。</p>
+<h2 id="分配帧"><a href="#分配帧" class="headerlink" title="分配帧"></a>分配帧</h2><p>现在我们可以通过引导信息访问内存映射，我们可以在顶部创建一个合适的帧分配器。 我们从通用骨架开始：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// in src/memory.rs</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">pub</span> <span class="class"><span class="keyword">struct</span> <span class="title">BootInfoFrameAllocator</span></span>&lt;I&gt; <span class="keyword">where</span> I: <span class="built_in">Iterator</span>&lt;Item = PhysFrame&gt; &#123;</span><br><span class="line">    frames: I,</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">impl</span>&lt;I&gt; FrameAllocator&lt;Size4KiB&gt; <span class="keyword">for</span> BootInfoFrameAllocator&lt;I&gt;</span><br><span class="line">    <span class="keyword">where</span> I: <span class="built_in">Iterator</span>&lt;Item = PhysFrame&gt;</span><br><span class="line">&#123;</span><br><span class="line">    <span class="function"><span class="keyword">fn</span> <span class="title">allocate_frame</span></span>(&amp;<span class="keyword">mut</span> <span class="keyword">self</span>) -&gt; <span class="built_in">Option</span>&lt;PhysFrame&gt; &#123;</span><br><span class="line">        <span class="keyword">self</span>.frames.next()</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>可以使用任何帧的<code>Iterator</code>来初始化<code>frames</code>字段。 这允许我们将<code>alloc</code>调用委托给<code>Iterator::next</code>方法。</p>
+<p><code>BootInfoFrameAllocator</code>的初始化发生在新的<code>init_frame_allocator</code>函数中：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// in src/memory.rs</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">use</span> bootloader::bootinfo::&#123;MemoryMap, MemoryRegionType&#125;;</span><br><span class="line"></span><br><span class="line"><span class="comment">/// Create a FrameAllocator from the passed memory map</span></span><br><span class="line"><span class="keyword">pub</span> <span class="function"><span class="keyword">fn</span> <span class="title">init_frame_allocator</span></span>(</span><br><span class="line">    memory_map: &amp;<span class="symbol">'static</span> MemoryMap,</span><br><span class="line">) -&gt; BootInfoFrameAllocator&lt;<span class="keyword">impl</span> <span class="built_in">Iterator</span>&lt;Item = PhysFrame&gt;&gt; &#123;</span><br><span class="line">    <span class="comment">// get usable regions from memory map</span></span><br><span class="line">    <span class="keyword">let</span> regions = memory_map</span><br><span class="line">        .iter()</span><br><span class="line">        .filter(|r| r.region_type == MemoryRegionType::Usable);</span><br><span class="line">    <span class="comment">// map each region to its address range</span></span><br><span class="line">    <span class="keyword">let</span> addr_ranges = regions.map(|r| r.range.start_addr()..r.range.end_addr());</span><br><span class="line">    <span class="comment">// transform to an iterator of frame start addresses</span></span><br><span class="line">    <span class="keyword">let</span> frame_addresses = addr_ranges.flat_map(|r| r.into_iter().step_by(<span class="number">4096</span>));</span><br><span class="line">    <span class="comment">// create `PhysFrame` types from the start addresses</span></span><br><span class="line">    <span class="keyword">let</span> frames = frame_addresses.map(|addr| &#123;</span><br><span class="line">        PhysFrame::containing_address(PhysAddr::new(addr))</span><br><span class="line">    &#125;);</span><br><span class="line"></span><br><span class="line">    BootInfoFrameAllocator &#123; frames &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>此函数使用迭代器组合方法将初始MemoryMap转换为可用物理帧的迭代器：</p>
+<ul>
+<li><p>首先，我们调用<code>iter</code>方法将内存映射转换为<code>MemoryRegions</code>的迭代器。然后我们使用<code>filter</code>方法跳过任何保留或不可用的区域。引导加载程序更新它创建的所有映射的内存映射，因此我们的内核（代码，数据或堆栈）使用的帧或存储引导信息的帧已标记为<code>InUse</code>或类似。因此，我们可以确定可用框架不会在其他地方使用。</p>
+</li>
+<li><p>第二步，我们使用<code>map</code> combinator和Rust的range语法将内存区域的迭代器转换为地址范围的迭代器。</p>
+</li>
+<li><p>第三步是最复杂的：我们通过<code>into_iter</code>方法将每个范围转换为迭代器，然后使用<code>step_by</code>选择每个第4096个地址。由于4096字节（= 4 KiB）是页面大小，我们得到每帧的起始地址。引导加载程序页面对齐所有可用的内存区域，这样我们就不需要任何对齐或舍入代码。通过使用<code>flat_map</code>而不是<code>map</code>，我们得到<code>Iterator&lt;Item = u64&gt;</code>而不是<code>Iterator&lt;Item = Iterator &lt;Item = u64&gt;&gt;</code>。</p>
+</li>
+<li><p>最后一步，我们将起始地址转换为PhysFrame类型，以构造所需的<code>Iterator &lt;Item = PhysFrame&gt;</code>。然后我们使用这个迭代器来创建并返回一个新的<code>BootInfoFrameAllocator</code>。</p>
+</li>
+</ul>
+<p>我们现在可以修改<code>kernel_main</code>函数来传递<code>BootInfoFrameAllocator</code>实例而不是<code>EmptyFrameAllocator</code>：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// in src/main.rs</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#[cfg(not(test))]</span></span><br><span class="line"><span class="function"><span class="keyword">fn</span> <span class="title">kernel_main</span></span>(boot_info: &amp;<span class="symbol">'static</span> BootInfo) -&gt; ! &#123;</span><br><span class="line">    […] <span class="comment">// initialize GDT, IDT, PICS</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">use</span> x86_64::structures::paging::&#123;PageTable, RecursivePageTable&#125;;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">let</span> <span class="keyword">mut</span> recursive_page_table = <span class="keyword">unsafe</span> &#123;</span><br><span class="line">        memory::init(boot_info.p4_table_addr <span class="keyword">as</span> <span class="built_in">usize</span>)</span><br><span class="line">    &#125;;</span><br><span class="line">    <span class="comment">// new</span></span><br><span class="line">    <span class="keyword">let</span> <span class="keyword">mut</span> frame_allocator = memory::init_frame_allocator(&amp;boot_info.memory_map);</span><br><span class="line"></span><br><span class="line">    blog_os::memory::create_mapping(&amp;<span class="keyword">mut</span> recursive_page_table, &amp;<span class="keyword">mut</span> frame_allocator);</span><br><span class="line">    <span class="keyword">unsafe</span> &#123; (<span class="number">0xdeadbeaf900</span> <span class="keyword">as</span> *<span class="keyword">mut</span> <span class="built_in">u64</span>).write_volatile(<span class="number">0xf021f077f065f04e</span>)&#125;;</span><br><span class="line"></span><br><span class="line">    <span class="built_in">println!</span>(<span class="string">"It did not crash!"</span>);</span><br><span class="line">    blog_os::hlt_loop();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p> 现在映射成功了，我们看到黑白”New!” 再次在屏幕上出现。在幕后，<code>map_to</code>方法以下列方式创建缺少的页表：</p>
+<ul>
+<li>从传递的<code>frame_allocator</code>中分配一个未使用的帧。</li>
+<li>将更高级别表的条目映射到该帧。现在可以通过递归页表访问该帧。</li>
+<li>将帧归零以创建新的空页面表。</li>
+<li>继续处理下一个级别的表。</li>
+</ul>
+<p>虽然我们的<code>create_mapping</code>函数只是一些示例代码，但我们现在能够为任意页面创建新的映射。这对于在将来的帖子中分配内存或实现多线程非常重要。</p>
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>在这篇文章中，我们学习了如何使用递归4级表条目将所有页表帧映射到可计算的虚拟地址。我们使用这种技术来实现地址转换功能并在页表中创建新的映射。</p>
+<p>我们看到创建新映射需要使用未使用的帧来创建新的页表。这样的帧分配器可以在bootloader程序传递给我们的内核的引导信息结构之上实现。</p>
+<h2 id="接下来？"><a href="#接下来？" class="headerlink" title="接下来？"></a>接下来？</h2><p>下一篇文章将为我们的内核创建一个堆内存区域，这将允许我们分配内存并使用各种集合类型。</p>
+
+  </div>
+</article>
+
+
+
+        
+          <div id="footer-post-container">
+  <div id="footer-post">
+
+    <div id="nav-footer" style="display: none">
+      <ul>
+         
+          <li><a href="/Writing_an_OS_in_Rust_zh/">Home</a></li>
+         
+          <li><a href="/Writing_an_OS_in_Rust_zh/about/">About</a></li>
+         
+          <li><a href="/Writing_an_OS_in_Rust_zh/archives/">Writing</a></li>
+         
+          <li><a href="/Writing_an_OS_in_Rust_zh/projects_url">Projects</a></li>
+        
+      </ul>
+    </div>
+
+    <div id="toc-footer" style="display: none">
+      <ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#简介"><span class="toc-number">1.</span> <span class="toc-text">简介</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#访问页表"><span class="toc-number">2.</span> <span class="toc-text">访问页表</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#递归页表"><span class="toc-number">3.</span> <span class="toc-text">递归页表</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#地址计算"><span class="toc-number">3.1.</span> <span class="toc-text">地址计算</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#实现"><span class="toc-number">4.</span> <span class="toc-text">实现</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#地址翻译"><span class="toc-number">5.</span> <span class="toc-text">地址翻译</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#试试看"><span class="toc-number">5.1.</span> <span class="toc-text">试试看</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#RecursivePageTable类型"><span class="toc-number">5.2.</span> <span class="toc-text">RecursivePageTable类型</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#使unsafe的函数safe"><span class="toc-number">5.3.</span> <span class="toc-text">使unsafe的函数safe</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#创建新映射"><span class="toc-number">6.</span> <span class="toc-text">创建新映射</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#Boot-信息"><span class="toc-number">7.</span> <span class="toc-text">Boot 信息</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#entry-point宏"><span class="toc-number">7.1.</span> <span class="toc-text">entry_point宏</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#分配帧"><span class="toc-number">8.</span> <span class="toc-text">分配帧</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#总结"><span class="toc-number">9.</span> <span class="toc-text">总结</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#接下来？"><span class="toc-number">10.</span> <span class="toc-text">接下来？</span></a></li></ol>
+    </div>
+
+    <div id="share-footer" style="display: none">
+      <ul>
+  <li><a class="icon" href="http://www.facebook.com/sharer.php?u=https://longfangsong.github.io/2019/02/01/高级分页/"><i class="fab fa-facebook fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="https://twitter.com/share?url=https://longfangsong.github.io/2019/02/01/高级分页/&text=高级分页"><i class="fab fa-twitter fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://www.linkedin.com/shareArticle?url=https://longfangsong.github.io/2019/02/01/高级分页/&title=高级分页"><i class="fab fa-linkedin fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="https://pinterest.com/pin/create/bookmarklet/?url=https://longfangsong.github.io/2019/02/01/高级分页/&is_video=false&description=高级分页"><i class="fab fa-pinterest fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="mailto:?subject=高级分页&body=Check out this article: https://longfangsong.github.io/2019/02/01/高级分页/"><i class="fas fa-envelope fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="https://getpocket.com/save?url=https://longfangsong.github.io/2019/02/01/高级分页/&title=高级分页"><i class="fab fa-get-pocket fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://reddit.com/submit?url=https://longfangsong.github.io/2019/02/01/高级分页/&title=高级分页"><i class="fab fa-reddit fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://www.stumbleupon.com/submit?url=https://longfangsong.github.io/2019/02/01/高级分页/&title=高级分页"><i class="fab fa-stumbleupon fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://digg.com/submit?url=https://longfangsong.github.io/2019/02/01/高级分页/&title=高级分页"><i class="fab fa-digg fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://www.tumblr.com/share/link?url=https://longfangsong.github.io/2019/02/01/高级分页/&name=高级分页&description="><i class="fab fa-tumblr fa-lg" aria-hidden="true"></i></a></li>
+</ul>
+
+    </div>
+
+    <div id="actions-footer">
+        <a id="menu" class="icon" href="#" onclick="$('#nav-footer').toggle();return false;"><i class="fas fa-bars fa-lg" aria-hidden="true"></i> Menu</a>
+        <a id="toc" class="icon" href="#" onclick="$('#toc-footer').toggle();return false;"><i class="fas fa-list fa-lg" aria-hidden="true"></i> TOC</a>
+        <a id="share" class="icon" href="#" onclick="$('#share-footer').toggle();return false;"><i class="fas fa-share-alt fa-lg" aria-hidden="true"></i> Share</a>
+        <a id="top" style="display:none" class="icon" href="#" onclick="$('html, body').animate({ scrollTop: 0 }, 'fast');"><i class="fas fa-chevron-up fa-lg" aria-hidden="true"></i> Top</a>
+    </div>
+
+  </div>
+</div>
+
+        
+        <footer id="footer">
+  <div class="footer-left">
+    Copyright &copy; 2019 Philipp Oppermann, translation into Chinese by 龙方淞
+  </div>
+  <!-- <div class="footer-right">
+    <nav>
+      <ul> -->
+        <!--  
+          <li><a href="/Writing_an_OS_in_Rust_zh/">Home</a></li>
+         
+          <li><a href="/Writing_an_OS_in_Rust_zh/about/">About</a></li>
+         
+          <li><a href="/Writing_an_OS_in_Rust_zh/archives/">Writing</a></li>
+         
+          <li><a href="/Writing_an_OS_in_Rust_zh/projects_url">Projects</a></li>
+         -->
+      <!-- </ul>
+    </nav>
+  </div> -->
+</footer>
+
+    </div>
+</body>
+</html>
+<!-- styles -->
+<link rel="stylesheet" href="/Writing_an_OS_in_Rust_zh/lib/font-awesome/css/all.min.css">
+<link rel="stylesheet" href="/Writing_an_OS_in_Rust_zh/lib/justified-gallery/css/justifiedGallery.min.css">
+
+<!-- jquery -->
+<script src="/Writing_an_OS_in_Rust_zh/lib/jquery/jquery.min.js"></script>
+<script src="/Writing_an_OS_in_Rust_zh/lib/justified-gallery/js/jquery.justifiedGallery.min.js"></script>
+<script src="/Writing_an_OS_in_Rust_zh/js/main.js"></script>
+<!-- search -->
+
+<!-- Google Analytics -->
+
+<!-- Baidu Analytics -->
+
+<!-- Disqus Comments -->
+
+
