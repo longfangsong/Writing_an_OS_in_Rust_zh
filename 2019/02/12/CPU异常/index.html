@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html>
+<head><meta name="generator" content="Hexo 3.8.0">
+    <!-- so meta -->
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="HandheldFriendly" content="True">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <meta name="description" content="概述异常表示当前指令执行时碰到了问题。例如，如果当前指令试图除0，则CPU发出异常。当发生异常时，CPU会中断其当前工作并立即调用特定的异常处理函数，具体取决于异常类型。 在x86上有大约20种不同的CPU异常类型。最重要的是：  页面错误：非法内存访问发生页面错误。例如，如果当前指令尝试从未映射的页面读取或尝试写入只读页面。 无效操作码：当前指令无效时会发生此异常，例如，当我们尝试在不支持它们的">
+<meta name="keywords" content="Exceptions">
+<meta property="og:type" content="article">
+<meta property="og:title" content="CPU异常">
+<meta property="og:url" content="https://longfangsong.github.io/2019/02/12/CPU异常/index.html">
+<meta property="og:site_name" content="用Rust编写一个操作系统">
+<meta property="og:description" content="概述异常表示当前指令执行时碰到了问题。例如，如果当前指令试图除0，则CPU发出异常。当发生异常时，CPU会中断其当前工作并立即调用特定的异常处理函数，具体取决于异常类型。 在x86上有大约20种不同的CPU异常类型。最重要的是：  页面错误：非法内存访问发生页面错误。例如，如果当前指令尝试从未映射的页面读取或尝试写入只读页面。 无效操作码：当前指令无效时会发生此异常，例如，当我们尝试在不支持它们的">
+<meta property="og:locale" content="default">
+<meta property="og:image" content="https://os.phil-opp.com/cpu-exceptions/function-stack-frame.svg">
+<meta property="og:image" content="https://os.phil-opp.com/cpu-exceptions/exception-stack-frame.svg">
+<meta property="og:image" content="https://os.phil-opp.com/cpu-exceptions/qemu-breakpoint-exception.png">
+<meta property="og:image" content="https://www.pcper.com/files/imagecache/article_max_width/news/2018-04-27/stop-hitting-yourself-meme.jpg">
+<meta property="og:updated_time" content="2019-02-12T13:31:17.268Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="CPU异常">
+<meta name="twitter:description" content="概述异常表示当前指令执行时碰到了问题。例如，如果当前指令试图除0，则CPU发出异常。当发生异常时，CPU会中断其当前工作并立即调用特定的异常处理函数，具体取决于异常类型。 在x86上有大约20种不同的CPU异常类型。最重要的是：  页面错误：非法内存访问发生页面错误。例如，如果当前指令尝试从未映射的页面读取或尝试写入只读页面。 无效操作码：当前指令无效时会发生此异常，例如，当我们尝试在不支持它们的">
+<meta name="twitter:image" content="https://os.phil-opp.com/cpu-exceptions/function-stack-frame.svg">
+    
+    
+        
+          
+              <link rel="shortcut icon" href="/Writing_an_OS_in_Rust_zh/images/favicon.ico">
+          
+        
+        
+          
+            <link rel="icon" type="image/png" href="/Writing_an_OS_in_Rust_zh/images/favicon-192x192.png" sizes="192x192">
+          
+        
+        
+          
+            <link rel="apple-touch-icon" sizes="180x180" href="/Writing_an_OS_in_Rust_zh/images/apple-touch-icon.png">
+          
+        
+    
+    <!-- title -->
+    <title>CPU异常</title>
+    <!-- styles -->
+    <link rel="stylesheet" href="/Writing_an_OS_in_Rust_zh/css/style.css">
+    <!-- persian styles -->
+    
+      <link rel="stylesheet" href="/Writing_an_OS_in_Rust_zh/css/rtl.css">
+    
+    <!-- rss -->
+    
+    
+</head>
+
+<body class="max-width mx-auto px3 ltr">
+    
+      <div id="header-post">
+  <a id="menu-icon" href="#"><i class="fas fa-bars fa-lg"></i></a>
+  <a id="menu-icon-tablet" href="#"><i class="fas fa-bars fa-lg"></i></a>
+  <a id="top-icon-tablet" href="#" onclick="$('html, body').animate({ scrollTop: 0 }, 'fast');" style="display:none;"><i class="fas fa-chevron-up fa-lg"></i></a>
+  <span id="menu">
+    <span id="nav">
+      <ul>
+         
+          <li><a href="/Writing_an_OS_in_Rust_zh/">Home</a></li>
+         
+          <li><a href="/Writing_an_OS_in_Rust_zh/about/">About</a></li>
+         
+          <li><a href="/Writing_an_OS_in_Rust_zh/archives/">Writing</a></li>
+         
+          <li><a href="/Writing_an_OS_in_Rust_zh/projects_url">Projects</a></li>
+        
+      </ul>
+    </span>
+    <br>
+    <span id="actions">
+      <ul>
+        
+        
+        <li><a class="icon" href="/Writing_an_OS_in_Rust_zh/2019/02/01/高级分页/"><i class="fas fa-chevron-right" aria-hidden="true" onmouseover="$('#i-next').toggle();" onmouseout="$('#i-next').toggle();"></i></a></li>
+        
+        <li><a class="icon" href="#" onclick="$('html, body').animate({ scrollTop: 0 }, 'fast');"><i class="fas fa-chevron-up" aria-hidden="true" onmouseover="$('#i-top').toggle();" onmouseout="$('#i-top').toggle();"></i></a></li>
+        <li><a class="icon" href="#"><i class="fas fa-share-alt" aria-hidden="true" onmouseover="$('#i-share').toggle();" onmouseout="$('#i-share').toggle();" onclick="$('#share').toggle();return false;"></i></a></li>
+      </ul>
+      <span id="i-prev" class="info" style="display:none;">Previous post</span>
+      <span id="i-next" class="info" style="display:none;">Next post</span>
+      <span id="i-top" class="info" style="display:none;">Back to top</span>
+      <span id="i-share" class="info" style="display:none;">Share post</span>
+    </span>
+    <br>
+    <div id="share" style="display: none">
+      <ul>
+  <li><a class="icon" href="http://www.facebook.com/sharer.php?u=https://longfangsong.github.io/2019/02/12/CPU异常/"><i class="fab fa-facebook " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="https://twitter.com/share?url=https://longfangsong.github.io/2019/02/12/CPU异常/&text=CPU异常"><i class="fab fa-twitter " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://www.linkedin.com/shareArticle?url=https://longfangsong.github.io/2019/02/12/CPU异常/&title=CPU异常"><i class="fab fa-linkedin " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="https://pinterest.com/pin/create/bookmarklet/?url=https://longfangsong.github.io/2019/02/12/CPU异常/&is_video=false&description=CPU异常"><i class="fab fa-pinterest " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="mailto:?subject=CPU异常&body=Check out this article: https://longfangsong.github.io/2019/02/12/CPU异常/"><i class="fas fa-envelope " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="https://getpocket.com/save?url=https://longfangsong.github.io/2019/02/12/CPU异常/&title=CPU异常"><i class="fab fa-get-pocket " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://reddit.com/submit?url=https://longfangsong.github.io/2019/02/12/CPU异常/&title=CPU异常"><i class="fab fa-reddit " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://www.stumbleupon.com/submit?url=https://longfangsong.github.io/2019/02/12/CPU异常/&title=CPU异常"><i class="fab fa-stumbleupon " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://digg.com/submit?url=https://longfangsong.github.io/2019/02/12/CPU异常/&title=CPU异常"><i class="fab fa-digg " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://www.tumblr.com/share/link?url=https://longfangsong.github.io/2019/02/12/CPU异常/&name=CPU异常&description="><i class="fab fa-tumblr " aria-hidden="true"></i></a></li>
+</ul>
+
+    </div>
+    <div id="toc">
+      <ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#概述"><span class="toc-number">1.</span> <span class="toc-text">概述</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#中断描述符表"><span class="toc-number">2.</span> <span class="toc-text">中断描述符表</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#IDT类型"><span class="toc-number">3.</span> <span class="toc-text">IDT类型</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#中断调用约定"><span class="toc-number">4.</span> <span class="toc-text">中断调用约定</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#保留和临时寄存器"><span class="toc-number">4.1.</span> <span class="toc-text">保留和临时寄存器</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#保留所有寄存器"><span class="toc-number">4.2.</span> <span class="toc-text">保留所有寄存器</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#异常堆栈帧"><span class="toc-number">5.</span> <span class="toc-text">异常堆栈帧</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#幕后"><span class="toc-number">6.</span> <span class="toc-text">幕后</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#实现"><span class="toc-number">7.</span> <span class="toc-text">实现</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#加载IDT"><span class="toc-number">7.1.</span> <span class="toc-text">加载IDT</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#Lazy-Statics-前来支援"><span class="toc-number">7.2.</span> <span class="toc-text">Lazy Statics 前来支援</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#测试一下"><span class="toc-number">7.3.</span> <span class="toc-text">测试一下</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#添加测试"><span class="toc-number">7.4.</span> <span class="toc-text">添加测试</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#在Windows-1-上修复cargo-test"><span class="toc-number">8.</span> <span class="toc-text">在Windows[^1]上修复cargo test</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#魔法太多了？"><span class="toc-number">9.</span> <span class="toc-text">魔法太多了？</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#下一步是什么？"><span class="toc-number">10.</span> <span class="toc-text">下一步是什么？</span></a></li></ol>
+    </div>
+  </span>
+</div>
+
+    
+    <div class="content index py4">
+        
+        <article class="post" itemscope="" itemtype="http://schema.org/BlogPosting">
+  <header>
+    
+    <h1 class="posttitle" itemprop="name headline">
+        CPU异常
+    </h1>
+
+
+
+    <div class="meta">
+      <span class="author" itemprop="author" itemscope="" itemtype="http://schema.org/Person">
+        <span itemprop="name">用Rust编写一个操作系统</span>
+      </span>
+      
+    <div class="postdate">
+        <time datetime="2019-02-12T12:07:53.000Z" itemprop="datePublished">2019-02-12</time>
+    </div>
+
+
+      
+
+      
+    <div class="article-tag">
+        <i class="fas fa-tag"></i>
+        <a class="tag-link" href="/Writing_an_OS_in_Rust_zh/tags/Exceptions/">Exceptions</a>
+    </div>
+
+
+    </div>
+  </header>
+  
+
+  <div class="content" itemprop="articleBody">
+    <h2 id="概述"><a href="#概述" class="headerlink" title="概述"></a>概述</h2><p>异常表示当前指令执行时碰到了问题。例如，如果当前指令试图除0，则CPU发出异常。当发生异常时，CPU会中断其当前工作并立即调用特定的异常处理函数，具体取决于异常类型。</p>
+<p>在x86上有大约20种不同的CPU异常类型。最重要的是：</p>
+<ul>
+<li>页面错误：非法内存访问发生页面错误。例如，如果当前指令尝试从未映射的页面读取或尝试写入只读页面。</li>
+<li>无效操作码：当前指令无效时会发生此异常，例如，当我们尝试在不支持它们的旧CPU上使用较新的SSE指令时。</li>
+<li>通用保护错误：这是可能的发生原因最多的异常。它发生在各种特权级不正确的访问时，例如尝试在用户级代码中执行特权指令或在配置寄存器中写入保留字段。</li>
+<li>双重故障：发生异常时，CPU尝试调用相应的处理函数。如果在调用异常处理程序时发生另一个异常，则CPU会引发双重故障异常。当没有为异常注册处理函数时，也会发生此异常。</li>
+<li>三重故障：如果在CPU尝试调用双重故障处理程序功能时发生异常，则会发出致命的三重故障。我们无法捕获或处理三重故障。大多数处理器通过重置自身并重新启动操作系统来做出反应。</li>
+</ul>
+<p>完整的异常列表，请见 <a href="http://wiki.osdev.org/Exceptions" target="_blank" rel="noopener">OSDev wiki</a>。</p>
+<h2 id="中断描述符表"><a href="#中断描述符表" class="headerlink" title="中断描述符表"></a>中断描述符表</h2><p>为了捕获和处理异常，我们必须设置一个所谓的中断描述符表（IDT）。在此表中，我们可以为每个CPU异常指定处理函数。硬件直接使用此表，因此我们需要遵循预定义的格式。每个条目必须具有以下16字节结构：</p>
+<table>
+<thead>
+<tr>
+<th>类型</th>
+<th>名称</th>
+<th>介绍</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>u16</td>
+<td>函数指针 [0:15]</td>
+<td>中断处理函数的 [0:15] 位。</td>
+</tr>
+<tr>
+<td>u16</td>
+<td>GDT选择子</td>
+<td>全局描述符表中的代码段选择子。</td>
+</tr>
+<tr>
+<td>u16</td>
+<td>选项</td>
+<td>（见下）</td>
+</tr>
+<tr>
+<td>u16</td>
+<td>函数指针 [16:31]</td>
+<td>中断处理函数的 [16:31] 位。</td>
+</tr>
+<tr>
+<td>u32</td>
+<td>函数指针 [32:63]</td>
+<td>中断处理函数的 [32:63] 位。</td>
+</tr>
+<tr>
+<td>u32</td>
+<td>保留</td>
+</tr>
+</tbody>
+</table>
+<p>其中可选字段具有以下格式：</p>
+<table>
+<thead>
+<tr>
+<th>位</th>
+<th>名称</th>
+<th>介绍</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0-2</td>
+<td>中断堆栈表索引</td>
+<td>0: 不更换任务堆栈, 1-7: 当这个处理函数被调用时会切换到中断堆栈表中的第n个栈。</td>
+</tr>
+<tr>
+<td>3-7</td>
+<td>保留</td>
+<td></td>
+</tr>
+<tr>
+<td>8</td>
+<td>0: 中断门，1: 陷入门</td>
+<td>若这个位是0，处理函数被调用时会禁止中断。</td>
+</tr>
+<tr>
+<td>9-11</td>
+<td>全1</td>
+<td></td>
+</tr>
+<tr>
+<td>12</td>
+<td>0</td>
+<td></td>
+</tr>
+<tr>
+<td>13‑14</td>
+<td>描述符特权集l(DPL)</td>
+<td>调用这个处理函数的最低特权集。</td>
+</tr>
+<tr>
+<td>15</td>
+<td>存在</td>
+<td>标记这个表项是否存在</td>
+</tr>
+</tbody>
+</table>
+<p>每个异常都有一个预定义的IDT索引。例如，无效操作码异常表索引为6，页面错误异常表索引为14。因此，硬件可以为每个异常自动加载相应的IDT条目。 OSDev wiki 中的<a href="http://wiki.osdev.org/Exceptions" target="_blank" rel="noopener">异常表</a>在“Vector nr.”一列中列出了所有异常的IDT索引。</p>
+<p>发生异常时，CPU大致执行了以下操作：</p>
+<ol>
+<li><p>将一些寄存器的值压入堆栈，包括指令指针和RFLAGS寄存器。 （我们将在本文后面使用这些值。）</p>
+</li>
+<li><p>从中断描述符表（IDT）中读取相应的条目。例如，CPU发生页面错误时会读取第14个条目。</p>
+</li>
+<li><p>检查条目是否存在。如果没有，则引发双重故障。</p>
+</li>
+<li><p>如果条目是中断门（未设置位40），则禁用硬件中断。</p>
+</li>
+<li><p>将指定的GDT选择器加载到CS段中。</p>
+</li>
+<li><p>跳转到指定的处理函数。</p>
+</li>
+</ol>
+<p>暂时不要担心步骤4和5，我们将在以后的帖子中了解全局描述符表和硬件中断。</p>
+<h2 id="IDT类型"><a href="#IDT类型" class="headerlink" title="IDT类型"></a>IDT类型</h2><p>我们将使用<code>x86_64</code> crate的<code>InterruptDescriptorTable</code>结构体，而不是创建我们自己的IDT类型，如下所示：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#[repr(C)]</span></span><br><span class="line"><span class="keyword">pub</span> <span class="class"><span class="keyword">struct</span> <span class="title">InterruptDescriptorTable</span></span> &#123;</span><br><span class="line">    <span class="keyword">pub</span> divide_by_zero: Entry&lt;HandlerFunc&gt;,</span><br><span class="line">    <span class="keyword">pub</span> debug: Entry&lt;HandlerFunc&gt;,</span><br><span class="line">    <span class="keyword">pub</span> non_maskable_interrupt: Entry&lt;HandlerFunc&gt;,</span><br><span class="line">    <span class="keyword">pub</span> breakpoint: Entry&lt;HandlerFunc&gt;,</span><br><span class="line">    <span class="keyword">pub</span> overflow: Entry&lt;HandlerFunc&gt;,</span><br><span class="line">    <span class="keyword">pub</span> bound_range_exceeded: Entry&lt;HandlerFunc&gt;,</span><br><span class="line">    <span class="keyword">pub</span> invalid_opcode: Entry&lt;HandlerFunc&gt;,</span><br><span class="line">    <span class="keyword">pub</span> device_not_available: Entry&lt;HandlerFunc&gt;,</span><br><span class="line">    <span class="keyword">pub</span> double_fault: Entry&lt;HandlerFuncWithErrCode&gt;,</span><br><span class="line">    <span class="keyword">pub</span> invalid_tss: Entry&lt;HandlerFuncWithErrCode&gt;,</span><br><span class="line">    <span class="keyword">pub</span> segment_not_present: Entry&lt;HandlerFuncWithErrCode&gt;,</span><br><span class="line">    <span class="keyword">pub</span> stack_segment_fault: Entry&lt;HandlerFuncWithErrCode&gt;,</span><br><span class="line">    <span class="keyword">pub</span> general_protection_fault: Entry&lt;HandlerFuncWithErrCode&gt;,</span><br><span class="line">    <span class="keyword">pub</span> page_fault: Entry&lt;PageFaultHandlerFunc&gt;,</span><br><span class="line">    <span class="keyword">pub</span> x87_floating_point: Entry&lt;HandlerFunc&gt;,</span><br><span class="line">    <span class="keyword">pub</span> alignment_check: Entry&lt;HandlerFuncWithErrCode&gt;,</span><br><span class="line">    <span class="keyword">pub</span> machine_check: Entry&lt;HandlerFunc&gt;,</span><br><span class="line">    <span class="keyword">pub</span> simd_floating_point: Entry&lt;HandlerFunc&gt;,</span><br><span class="line">    <span class="keyword">pub</span> virtualization: Entry&lt;HandlerFunc&gt;,</span><br><span class="line">    <span class="keyword">pub</span> security_exception: Entry&lt;HandlerFuncWithErrCode&gt;,</span><br><span class="line">    <span class="comment">// some fields omitted</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这些字段的类型为 <code>idt::Entry&lt;F&gt;</code>，它是一个表示IDT条目字段的结构（参见上表）。 类型参数<code>F</code>定义了预期的处理函数类型。 我们看到一些条目需要<code>HandlerFunc</code>，而一些条目需要<code>HandlerFuncWithErrCode</code>。 页面错误甚至有自己的特殊类型：<code>PageFaultHandlerFunc</code>。</p>
+<p>我们先来看看<code>HandlerFunc</code>类型：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">type</span> <span class="title">HandlerFunc</span></span> = <span class="keyword">extern</span> <span class="string">"x86-interrupt"</span> <span class="function"><span class="keyword">fn</span></span>(_: &amp;<span class="keyword">mut</span> ExceptionStackFrame);</span><br></pre></td></tr></table></figure>
+<p>它是<code>extern &quot;x86-interrupt&quot; fn</code>类型的类型别名。 <code>extern</code>关键字定义了一个具有外部调用约定的函数，通常用于与C代码（<code>extern &quot;C&quot; fn</code>）进行通信。 但是什么是<code>x86-interrupt</code>调用约定？</p>
+<h2 id="中断调用约定"><a href="#中断调用约定" class="headerlink" title="中断调用约定"></a>中断调用约定</h2><p>异常与函数调用非常相似：CPU跳转到被调用函数的第一条指令并执行它。之后，CPU跳转到返回地址并继续执行父函数。</p>
+<p>但是，异常和函数调用之间存在一个主要区别：函数调用由编译器插入的<code>call</code>指令自动调用，而异常可能在任何指令处发生。为了理解这种差异的后果，我们需要更详细地检查函数调用。</p>
+<p>调用约定指定函数调用的详细信息。例如，它们指定放置函数参数的位置（例如，在寄存器中或堆栈上）以及返回结果的方式。在 x86_64 Linux 上，以下规则适用于C函数（在System V ABI中指定）：</p>
+<ul>
+<li>前六个整数参数在寄存器<code>rdi</code>，<code>rsi</code>，<code>rdx</code>，<code>rcx</code>，<code>r8</code>，<code>r9</code>中传递</li>
+<li>其他参数在堆栈上传递</li>
+<li>结果放置在<code>rax</code>和<code>rdx</code>中返回</li>
+</ul>
+<p>请注意，Rust不遵循C ABI（实际上，现在甚至还没有Rust ABI这种东西），因此这些规则仅适用于声明为extern“C”fn的函数。</p>
+<h3 id="保留和临时寄存器"><a href="#保留和临时寄存器" class="headerlink" title="保留和临时寄存器"></a>保留和临时寄存器</h3><p>调用约定将寄存器分为两部分：保留寄存器和临时寄存器。</p>
+<p>保留寄存器的值必须在函数调用前后不变。因此，只有在返回之前恢复其原始值时，才能允许被调用函数（“<em>callee</em>”）使用这些寄存器。因此，这些寄存器称为“<em>callee-saved</em>”。一种常见的模式是在函数开始时将这些寄存器保存到堆栈中，并在返回之前将它们恢复。</p>
+<p>相反，允许被调用函数无限制地覆盖临时寄存器。如果调用者想要在函数调用中保留临时寄存器的值，则需要在函数调用之前备份和恢复它（例如，通过将其推送到堆栈）。因此，临时寄存器将被（“<code>caller</code>”）保存，被称为“<em>caller-saved</em>”。</p>
+<p>在x86_64上，C调用约定指定以下保留和临时寄存器：</p>
+<table>
+<thead>
+<tr>
+<th>保留寄存器</th>
+<th>临时寄存器</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>rbp</code>, <code>rbx</code>, <code>rsp</code>, <code>r12</code>, <code>r13</code>, <code>r14</code>, <code>r15</code></td>
+<td><code>rax</code>, <code>rcx</code>, <code>rdx</code>, <code>rsi</code>, <code>rdi</code>, <code>r8</code>, <code>r9</code>, <code>r10</code>, <code>r11</code></td>
+</tr>
+<tr>
+<td><em>callee-saved</em></td>
+<td><em>caller-saved</em></td>
+</tr>
+</tbody>
+</table>
+<p>编译器知道这些规则，因此它会生成相应的代码。例如，大多数函数以<code>push rbp</code>开头，它把<code>rbp</code>压入栈来备份（因为它是<em>callee-saved</em>的寄存器）。</p>
+<h3 id="保留所有寄存器"><a href="#保留所有寄存器" class="headerlink" title="保留所有寄存器"></a>保留所有寄存器</h3><p>与函数调用相反，任何指令都可能发生异常。在大多数情况下，我们甚至不知道在编译时生成的代码是否会导致异常。例如，编译器无法知道指令是否导致堆栈溢出或页面错误。</p>
+<p>由于我们不知道何时发生异常，因此我们之前无法备份任何寄存器。这意味着我们不能使用依赖于<em>caller-saved</em>的寄存器的调用约定来处理异常处理程序。相反，我们的调用约定要保留所有寄存器。 x86中断调用约定就是这样一种调用约定，因此它保证所有寄存器值在函数返回时恢复为其原始值。</p>
+<h2 id="异常堆栈帧"><a href="#异常堆栈帧" class="headerlink" title="异常堆栈帧"></a>异常堆栈帧</h2><p>在正常的函数调用（使用<code>call</code>指令）时，CPU在跳转到目标函数之前压入返回地址。在函数返回（使用<code>ret</code>指令）时，CPU弹出此返回地址并跳转到它。所以普通函数调用的堆栈帧如下所示：</p>
+<p><img src="https://os.phil-opp.com/cpu-exceptions/function-stack-frame.svg" alt="function stack frame"></p>
+<p>但是，对于异常和中断处理程序，将返回地址压入堆栈中是不够的，因为中断处理程序通常在不同的上下文中运行（堆栈指针，CPU标志等）。而是在发生中断时CPU执行以下步骤：</p>
+<ol>
+<li><strong>对齐堆栈指针</strong>：任何指令都可能发生中断，因此堆栈指针也可以是任何值。但是，某些CPU指令（例如某些SSE指令）要求堆栈指针在16字节边界上对齐，因此CPU在中断之后立即执行这种对齐。</li>
+<li><strong>切换堆栈</strong>（在某些情况下）：当CPU权限级别更改时发生堆栈切换，例如在用户模式程序中发生CPU异常时。还可以使用所谓的中断堆栈表（在下一篇文章中描述）为特定中断配置堆栈切换。</li>
+<li><strong>旧堆栈指针压栈</strong>：CPU在中断发生时（对齐之前）将堆栈指针（<code>rsp</code>）和堆栈段（<code>ss</code>）寄存器的值压栈。这使得从中断处理程序返回时可以恢复原始堆栈指针。</li>
+<li><strong>将<code>RFLAGS</code>寄存器压栈并更新其值</strong>：RFLAGS寄存器包含各种控制和状态位。在进入中断处理时，CPU会更改一些位并向堆栈中压入旧值。</li>
+<li><strong>指令指针压栈</strong>：在跳转到中断处理程序功能之前，CPU按下指令指针（<code>rip</code>）和代码段（<code>cs</code>）。这与正常函数调用的返回地址的压栈相当。</li>
+<li><strong>错误代码压栈</strong>（对于某些异常）：对于某些特定异常（例如页面错误），CPU会将错误代码压栈，该代码描述异常的原因。</li>
+<li><strong>调用中断处理程序</strong>：CPU从IDT中的相应字段读取中断处理程序函数的地址和段描述符。然后通过将值加载到<code>rip</code>和<code>cs</code>寄存器中来调用此处理程序。</li>
+</ol>
+<p>所以异常堆栈帧如下所示：</p>
+<p><img src="https://os.phil-opp.com/cpu-exceptions/exception-stack-frame.svg" alt="exception stack frame"></p>
+<p>在<code>x86_64</code> crate 中，异常堆栈帧由<code>ExceptionStackFrame</code>结构表示。它作为<code>＆mut</code>传递给中断处理程序，可用于检索有关异常原因的其他信息。该结构不包含错误代码字段，因为只有少数异常会推送错误代码。这些异常使用单独的<code>HandlerFuncWithErrCode</code>函数类型，该函数类型具有额外的<code>error_code</code>参数。</p>
+<p>请注意，LLVM中当前存在一个错误，导致错误的错误代码参数。该问题的原因已为人所知，并有人正在着手解决。</p>
+<h2 id="幕后"><a href="#幕后" class="headerlink" title="幕后"></a>幕后</h2><p><code>x86-interrupt</code>调用约定是一个强大的抽象，几乎隐藏了异常处理过程的所有混乱细节。然而，有时知道幕布背后发生了什么是有用的。以下是x86中断调用约定要处理的事项的简短概述：</p>
+<ul>
+<li><strong>检索参数</strong>：大多数调用约定都希望参数在寄存器中传递。这对于异常处理程序是不可能的，因为在将它们备份到堆栈之前我们不能覆盖任何寄存器值。相反，<code>x86-interrupt</code>调用约定已经知道参数已经位于特定偏移量的堆栈上。</li>
+<li><strong>使用<code>iretq</code>返回</strong>：由于异常堆栈帧与正常函数调用的堆栈帧完全不同，因此我们无法通过正常的<code>ret</code>指令从处理程序函数返回。相反，必须使用<code>iretq</code>指令。</li>
+<li><strong>处理错误代码</strong>：错误代码在某些异常发生时被压入堆栈，使事情变得更加复杂。它会更改堆栈对齐的方式（请参阅下一点），并且需要在返回之前弹出堆栈。 <code>x86-interrupt</code>调用约定处理所有复杂性。但是，它不知道哪个处理函数用于哪个异常，因此需要从函数参数的数量中推导出该信息。这意味着程序员仍然有责任为每个异常使用正确的函数类型。幸运的是，<code>x86_64</code> crate定义的<code>InterruptDescriptorTable</code>类型确保使用正确的函数类型。</li>
+<li><strong>对齐堆栈</strong>：有一些指令（特别是SSE指令）需要16字节堆栈对齐。每当发生异常时，CPU都会确保这种对齐，但是对于某些异常，它会在将错误代码压入堆栈时再次破坏它。 x86中断调用约定通过在这种情况下重新排列堆栈来处理这个问题。</li>
+</ul>
+<p>如果您对更多细节感兴趣：我们还有一系列帖子解释了如何使用裸函数处理异常，见本文末尾。</p>
+<h2 id="实现"><a href="#实现" class="headerlink" title="实现"></a>实现</h2><p>现在我们已经理解了这些个理论，现在是时候在我们的内核中处理CPU异常了。我们首先在 <code>src/interrupts.rs</code>中创建一个新的中断模块，首先创建一个<code>init_idt</code>函数，创建一个新的<code>InterruptDescriptorTable</code>：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// in src/lib.rs</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">pub</span> <span class="keyword">mod</span> interrupts;</span><br><span class="line"></span><br><span class="line"><span class="comment">// in src/interrupts.rs</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">use</span> x86_64::structures::idt::InterruptDescriptorTable;</span><br><span class="line"></span><br><span class="line"><span class="keyword">pub</span> <span class="function"><span class="keyword">fn</span> <span class="title">init_idt</span></span>() &#123;</span><br><span class="line">    <span class="keyword">let</span> <span class="keyword">mut</span> idt = InterruptDescriptorTable::new();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>现在我们可以添加处理函数了。 我们首先为断点异常添加一个处理程序。 断点异常是测试异常处理的完美异常。 它的唯一目的是在执行断点指令<code>int3</code>时暂时暂停程序。</p>
+<p>断点异常通常用在调试器中：当用户设置断点时，调试器会使用<code>int3</code>指令覆盖相应的指令，以便CPU在到达该行时抛出断点异常。 当用户想要继续该程序时，调试器再次用原始指令替换<code>int3</code>指令并继续该程序。 有关更多详细信息，请参阅“<a href="http://eli.thegreenplace.net/2011/01/27/how-debuggers-work-part-2-breakpoints" target="_blank" rel="noopener">调试器如何工作</a>”系列。</p>
+<p>对于我们的用例，我们不需要覆盖任何指令。 相反，我们只想在执行断点指令时打印一条消息，然后继续该程序。 那么让我们创建一个简单的<code>breakpoint_handler</code>函数并将其添加到我们的IDT中：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// in src/interrupts.rs</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">use</span> x86_64::structures::idt::&#123;InterruptDescriptorTable, ExceptionStackFrame&#125;;</span><br><span class="line"><span class="keyword">use</span> crate::println;</span><br><span class="line"></span><br><span class="line"><span class="keyword">pub</span> <span class="function"><span class="keyword">fn</span> <span class="title">init_idt</span></span>() &#123;</span><br><span class="line">    <span class="keyword">let</span> <span class="keyword">mut</span> idt = InterruptDescriptorTable::new();</span><br><span class="line">    idt.breakpoint.set_handler_fn(breakpoint_handler);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">extern</span> <span class="string">"x86-interrupt"</span> <span class="function"><span class="keyword">fn</span> <span class="title">breakpoint_handler</span></span>(</span><br><span class="line">    stack_frame: &amp;<span class="keyword">mut</span> ExceptionStackFrame)</span><br><span class="line">&#123;</span><br><span class="line">    <span class="built_in">println!</span>(<span class="string">"EXCEPTION: BREAKPOINT\n&#123;:#?&#125;"</span>, stack_frame);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>我们的处理程序只输出一条消息并打印异常堆栈帧。</p>
+<p>当我们尝试编译它时，会发生以下错误：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">When we try to compile it, the following error occurs:</span><br><span class="line"></span><br><span class="line">error[E0658]: x86-interrupt ABI is experimental and subject to change (see issue #<span class="number">40180</span>)</span><br><span class="line">  --&gt; src/main.rs:<span class="number">53</span>:<span class="number">1</span></span><br><span class="line">   |</span><br><span class="line"><span class="number">53</span> | / <span class="keyword">extern</span> <span class="string">"x86-interrupt"</span> <span class="function"><span class="keyword">fn</span> <span class="title">breakpoint_handler</span></span>(stack_frame: &amp;<span class="keyword">mut</span> ExceptionStackFrame) &#123;</span><br><span class="line"><span class="number">54</span> | |     <span class="built_in">println!</span>(<span class="string">"EXCEPTION: BREAKPOINT\n&#123;:#?&#125;"</span>, stack_frame);</span><br><span class="line"><span class="number">55</span> | | &#125;</span><br><span class="line">   | |_^</span><br><span class="line">   |</span><br><span class="line">   = help: add <span class="meta">#![feature(abi_x86_interrupt)]</span> to the <span class="keyword">crate</span> attributes to enable</span><br></pre></td></tr></table></figure>
+<p>发生此错误是因为x86中断调用约定仍然不稳定。 现在无论如何也要使用它，我们必须通过在我们的lib.rs顶部添加<code>#![feature(abi_x86_interrupt)]</code>来显式启用它。</p>
+<h3 id="加载IDT"><a href="#加载IDT" class="headerlink" title="加载IDT"></a>加载IDT</h3><p>为了使用我们新的中断描述符表，我们需要使用<code>lidt</code>指令加载它。 <code>x86_64</code>的<code>InterruptDescriptorTable</code>结构为它提供了一个<code>load</code>函数。 我们试着用用它：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// in src/interrupts.rs</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">pub</span> <span class="function"><span class="keyword">fn</span> <span class="title">init_idt</span></span>() &#123;</span><br><span class="line">    <span class="keyword">let</span> <span class="keyword">mut</span> idt = InterruptDescriptorTable::new();</span><br><span class="line">    idt.breakpoint.set_handler_fn(breakpoint_handler);</span><br><span class="line">    idt.load();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>当我们尝试编译它时，会发生以下错误：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">error: `idt` does not live long enough</span><br><span class="line"><span class="meta">  --&gt;</span><span class="bash"> src/interrupts/mod.rs:43:5</span></span><br><span class="line">   |</span><br><span class="line">43 |     idt.load();</span><br><span class="line">   |     ^^^ does not live long enough</span><br><span class="line">44 | &#125;</span><br><span class="line">   | - borrowed value only lives until here</span><br><span class="line">   |</span><br><span class="line">   = note: borrowed value must be valid for the static lifetime...</span><br></pre></td></tr></table></figure>
+<p>看来<code>load</code>方法需要一个 <code>&amp;&#39;static self</code>，这是一个在程序的整个运行过程中都有效的引用。原因是CPU将在每次中断时访问此表，直到我们加载不同的IDT。因此，使用比<code>&#39;static</code>更短的生命周期可能导致免费使用后的错误。</p>
+<p>事实上，这正是这里发生的事情。我们的<code>idt</code>是在堆栈上创建的，所以它只在<code>init</code>函数中有效。之后堆栈被其他函数使用了，因此CPU会将不知道是啥的堆栈空间解释为IDT。幸运的是，<code>InterruptDescriptorTable::load</code>方法在其函数定义中对此生命周期要求进行编码，以便Rust编译器能够在编译时防止这种可能的错误。</p>
+<p>为了解决这个问题，我们需要将<code>idt</code>存储在具有<code>&#39;static</code>生命周期的地方。为了实现这一点，我们可以使用<code>Box</code>在堆上分配IDT，然后将其转换为<code>&#39;static</code>引用，但我们正在编写OS内核，因此没有堆（暂时）。</p>
+<p>作为替代方案，我们可以尝试将IDT存储为<code>static</code>：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">static</span> IDT: InterruptDescriptorTable = InterruptDescriptorTable::new();</span><br><span class="line"></span><br><span class="line"><span class="keyword">pub</span> <span class="function"><span class="keyword">fn</span> <span class="title">init_idt</span></span>() &#123;</span><br><span class="line">    IDT.breakpoint.set_handler_fn(breakpoint_handler);</span><br><span class="line">    IDT.load();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>但是，有一个问题：<code>static</code>是不可变的，所以我们不能修改<code>init</code>函数的断点条目。 我们可以通过使用<code>static mut</code>来解决这个问题：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">static</span> <span class="keyword">mut</span> IDT: InterruptDescriptorTable = InterruptDescriptorTable::new();</span><br><span class="line"></span><br><span class="line"><span class="keyword">pub</span> <span class="function"><span class="keyword">fn</span> <span class="title">init_idt</span></span>() &#123;</span><br><span class="line">    <span class="keyword">unsafe</span> &#123;</span><br><span class="line">        IDT.breakpoint.set_handler_fn(breakpoint_handler);</span><br><span class="line">        IDT.load();</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>编译没有错误，但它并非惯用方法。 <code>static mut</code>非常容易出现数据争用，因此我们需要在每次访问时使用<code>unsafe</code>块。</p>
+<h3 id="Lazy-Statics-前来支援"><a href="#Lazy-Statics-前来支援" class="headerlink" title="Lazy Statics 前来支援"></a>Lazy Statics 前来支援</h3><p>幸运的是，有<code>lazy_static</code>宏存在。 宏在第一次引用<code>static</code>变量时执行初始化，而不是在编译时评估静态。 因此，我们几乎可以在初始化块中执行所有操作，甚至可以读取运行时值。</p>
+<p>当我们为VGA文本缓冲区创建抽象时，我们已经导入了<code>lazy_static</code>包。 所以我们可以直接使用 <code>lazy_static!</code> 宏来创建我们的静态IDT：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// in src/interrupts.rs</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">use</span> lazy_static::lazy_static;</span><br><span class="line"></span><br><span class="line">lazy_static! &#123;</span><br><span class="line">    <span class="keyword">static</span> <span class="keyword">ref</span> IDT: InterruptDescriptorTable = &#123;</span><br><span class="line">        <span class="keyword">let</span> <span class="keyword">mut</span> idt = InterruptDescriptorTable::new();</span><br><span class="line">        idt.breakpoint.set_handler_fn(breakpoint_handler);</span><br><span class="line">        idt</span><br><span class="line">    &#125;;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">pub</span> <span class="function"><span class="keyword">fn</span> <span class="title">init_idt</span></span>() &#123;</span><br><span class="line">    IDT.load();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>请注意此解决方案不需要<code>unsafe</code>块。 <code>lazy_static!</code> 宏确实在幕后使用<code>unsafe</code>，但它抽象出了一个安全的用户接口。</p>
+<h3 id="测试一下"><a href="#测试一下" class="headerlink" title="测试一下"></a>测试一下</h3><p>现在我们应该能够处理断点异常了！ 我们在<code>_start</code>函数中尝试一下：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// in src/main.rs</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#[cfg(not(test))]</span></span><br><span class="line"><span class="meta">#[no_mangle]</span></span><br><span class="line"><span class="keyword">pub</span> <span class="keyword">extern</span> <span class="string">"C"</span> <span class="function"><span class="keyword">fn</span> <span class="title">_start</span></span>() -&gt; ! &#123;</span><br><span class="line">    <span class="built_in">println!</span>(<span class="string">"Hello World&#123;&#125;"</span>, <span class="string">"!"</span>);</span><br><span class="line"></span><br><span class="line">    blog_os::interrupts::init_idt();</span><br><span class="line"></span><br><span class="line">    <span class="comment">// invoke a breakpoint exception</span></span><br><span class="line">    x86_64::instructions::int3();</span><br><span class="line"></span><br><span class="line">    <span class="built_in">println!</span>(<span class="string">"It did not crash!"</span>);</span><br><span class="line">    <span class="keyword">loop</span> &#123;&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>当我们用QEMU运行这个（用<code>bootimage run</code>），我们会得到：</p>
+<p><img src="https://os.phil-opp.com/cpu-exceptions/qemu-breakpoint-exception.png" alt="QEMU printing EXCEPTION: BREAKPOINT and the exception stack frame"></p>
+<p>有用！ CPU成功调用我们的断点处理程序，它打印消息，然后返回到<code>_start</code>函数，它没有崩溃！ 信息已成功打印。</p>
+<p>我们看到异常堆栈帧告诉我们异常发生时的指令和堆栈指针。 调试意外异常时，此信息非常有用。</p>
+<h3 id="添加测试"><a href="#添加测试" class="headerlink" title="添加测试"></a>添加测试</h3><p>让我们创建一个集成测试，确保上述内容继续有效。 为此，我们创建了一个名为<code>test-exception-breakpoint.rs</code>的文件：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// in src/bin/test-exception-breakpoint.rs</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#![no_std]</span></span><br><span class="line"><span class="meta">#![cfg_attr(not(test), no_main)]</span></span><br><span class="line"><span class="meta">#![cfg_attr(test, allow(dead_code, unused_macros, unused_imports))]</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">use</span> core::panic::PanicInfo;</span><br><span class="line"><span class="keyword">use</span> blog_os::&#123;exit_qemu, serial_println&#125;;</span><br><span class="line"></span><br><span class="line"><span class="meta">#[cfg(not(test))]</span></span><br><span class="line"><span class="meta">#[no_mangle]</span></span><br><span class="line"><span class="keyword">pub</span> <span class="keyword">extern</span> <span class="string">"C"</span> <span class="function"><span class="keyword">fn</span> <span class="title">_start</span></span>() -&gt; ! &#123;</span><br><span class="line">    blog_os::interrupts::init_idt();</span><br><span class="line"></span><br><span class="line">    x86_64::instructions::int3();</span><br><span class="line"></span><br><span class="line">    serial_println!(<span class="string">"ok"</span>);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">unsafe</span> &#123; exit_qemu(); &#125;</span><br><span class="line">    <span class="keyword">loop</span> &#123;&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">#[cfg(not(test))]</span></span><br><span class="line"><span class="meta">#[panic_handler]</span></span><br><span class="line"><span class="function"><span class="keyword">fn</span> <span class="title">panic</span></span>(info: &amp;PanicInfo) -&gt; ! &#123;</span><br><span class="line">    serial_println!(<span class="string">"failed"</span>);</span><br><span class="line"></span><br><span class="line">    serial_println!(<span class="string">"&#123;&#125;"</span>, info);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">unsafe</span> &#123; exit_qemu(); &#125;</span><br><span class="line">    <span class="keyword">loop</span> &#123;&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>它与我们的主要类似，但不是打印“它没有崩溃！”到VGA缓冲区，它向串行输出打印“ok”并调用exit_qemu。这允许bootimage工具在调用int3指令后检测到我们的代码成功继续。如果我们的panic_handler被调用，我们改为打印失败，表示无法启动bootimage。</p>
+<p>您可以通过运行bootimage test来尝试这个新测试。</p>
+<h2 id="在Windows-1-上修复cargo-test"><a href="#在Windows-1-上修复cargo-test" class="headerlink" title="在Windows[^1]上修复cargo test"></a>在Windows[^1]上修复<code>cargo test</code></h2><p>x86中断调用约定有一个恼人的问题：在使用Windows目标的x86中断调用约定编译函数时，LLVM中存在导致“”LLVM ERROR: offset is not a multiple of 16”的错误。通常这没问题，因为我们只编译自定义的<code>x86_64-blog_os.json</code>目标。但是<code>cargo test</code>会为主机系统编译我们的箱子，因此如果主机系统是Windows，则会发生错误。</p>
+<p>要解决此问题，我们添加条件编译属性，以便在Windows系统上不编译x86中断函数。我们没有依赖中断模块的任何单元测试，所以我们可以简单地跳过整个模块的编译：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// in src/interrupts.rs</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// LLVM throws an error if a function with the</span></span><br><span class="line"><span class="comment">// x86-interrupt calling convention is compiled</span></span><br><span class="line"><span class="comment">// for a Windows system.</span></span><br><span class="line"><span class="meta">#![cfg(not(windows))]</span></span><br></pre></td></tr></table></figure>
+<p><code>#</code>之后的<code>!</code>表示这是一个内部属性，并且适用于我们所处的模块。没有<code>!</code>，它只会应用于文件中的下一个项目。 请注意，内部属性必须位于模块的开头。</p>
+<p>我们可以通过在<code>lib.rs</code>中使用外部属性（没有<code>!</code>）来实现相同的效果：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// in src/lib.rs</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#[cfg(not(windows))]</span> <span class="comment">// no bang ("!") after the hash ("#")</span></span><br><span class="line"><span class="keyword">pub</span> <span class="keyword">mod</span> interrupts;</span><br></pre></td></tr></table></figure>
+<p>两种方法都具有完全相同的效果，因此可使用哪个取决于个人偏好。在这种情况下，我更喜欢内部属性，因为它不会使我们的<code>lib.rs</code>和LLVM错误的解决方法混在一起，但无论哪种方式都可以。</p>
+<h2 id="魔法太多了？"><a href="#魔法太多了？" class="headerlink" title="魔法太多了？"></a>魔法太多了？</h2><p> <code>x86-interrupt</code> 调用约定和<code>InterruptDescriptorTable</code>类型使得异常处理过程相对简单且无痛。如果这对你来说太神奇了，你想学习异常处理的所有细节，我们就会介绍：我们的“<a href="https://os.phil-opp.com/first-edition/extra/naked-exceptions/" target="_blank" rel="noopener">处理异常与裸函数</a>”系列展示了如何在没有x86中断调用约定的情况下处理异常并创建它自己的IDT类型。从历史上看，这些帖子是x86中断调用约定和<code>x86_64</code> crate存在之前的主要异常处理帖子。请注意，这些帖子基于此博客的第一版，可能已过期。</p>
+<h2 id="下一步是什么？"><a href="#下一步是什么？" class="headerlink" title="下一步是什么？"></a>下一步是什么？</h2><p>我们成功地捕获了我们的第一个异常并从中返回！下一步是确保我们捕获所有异常，因为未捕获的异常会导致致命的三重故障，从而导致系统重置。下一篇文章解释了如何通过正确捕获双重故障来避免这种情况。</p>
+<p>[^1]: 别用Windows开发了！ <img src="https://www.pcper.com/files/imagecache/article_max_width/news/2018-04-27/stop-hitting-yourself-meme.jpg" alt="View Full Size"></p>
+
+  </div>
+</article>
+
+
+
+        
+          <div id="footer-post-container">
+  <div id="footer-post">
+
+    <div id="nav-footer" style="display: none">
+      <ul>
+         
+          <li><a href="/Writing_an_OS_in_Rust_zh/">Home</a></li>
+         
+          <li><a href="/Writing_an_OS_in_Rust_zh/about/">About</a></li>
+         
+          <li><a href="/Writing_an_OS_in_Rust_zh/archives/">Writing</a></li>
+         
+          <li><a href="/Writing_an_OS_in_Rust_zh/projects_url">Projects</a></li>
+        
+      </ul>
+    </div>
+
+    <div id="toc-footer" style="display: none">
+      <ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#概述"><span class="toc-number">1.</span> <span class="toc-text">概述</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#中断描述符表"><span class="toc-number">2.</span> <span class="toc-text">中断描述符表</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#IDT类型"><span class="toc-number">3.</span> <span class="toc-text">IDT类型</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#中断调用约定"><span class="toc-number">4.</span> <span class="toc-text">中断调用约定</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#保留和临时寄存器"><span class="toc-number">4.1.</span> <span class="toc-text">保留和临时寄存器</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#保留所有寄存器"><span class="toc-number">4.2.</span> <span class="toc-text">保留所有寄存器</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#异常堆栈帧"><span class="toc-number">5.</span> <span class="toc-text">异常堆栈帧</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#幕后"><span class="toc-number">6.</span> <span class="toc-text">幕后</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#实现"><span class="toc-number">7.</span> <span class="toc-text">实现</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#加载IDT"><span class="toc-number">7.1.</span> <span class="toc-text">加载IDT</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#Lazy-Statics-前来支援"><span class="toc-number">7.2.</span> <span class="toc-text">Lazy Statics 前来支援</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#测试一下"><span class="toc-number">7.3.</span> <span class="toc-text">测试一下</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#添加测试"><span class="toc-number">7.4.</span> <span class="toc-text">添加测试</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#在Windows-1-上修复cargo-test"><span class="toc-number">8.</span> <span class="toc-text">在Windows[^1]上修复cargo test</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#魔法太多了？"><span class="toc-number">9.</span> <span class="toc-text">魔法太多了？</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#下一步是什么？"><span class="toc-number">10.</span> <span class="toc-text">下一步是什么？</span></a></li></ol>
+    </div>
+
+    <div id="share-footer" style="display: none">
+      <ul>
+  <li><a class="icon" href="http://www.facebook.com/sharer.php?u=https://longfangsong.github.io/2019/02/12/CPU异常/"><i class="fab fa-facebook fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="https://twitter.com/share?url=https://longfangsong.github.io/2019/02/12/CPU异常/&text=CPU异常"><i class="fab fa-twitter fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://www.linkedin.com/shareArticle?url=https://longfangsong.github.io/2019/02/12/CPU异常/&title=CPU异常"><i class="fab fa-linkedin fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="https://pinterest.com/pin/create/bookmarklet/?url=https://longfangsong.github.io/2019/02/12/CPU异常/&is_video=false&description=CPU异常"><i class="fab fa-pinterest fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="mailto:?subject=CPU异常&body=Check out this article: https://longfangsong.github.io/2019/02/12/CPU异常/"><i class="fas fa-envelope fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="https://getpocket.com/save?url=https://longfangsong.github.io/2019/02/12/CPU异常/&title=CPU异常"><i class="fab fa-get-pocket fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://reddit.com/submit?url=https://longfangsong.github.io/2019/02/12/CPU异常/&title=CPU异常"><i class="fab fa-reddit fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://www.stumbleupon.com/submit?url=https://longfangsong.github.io/2019/02/12/CPU异常/&title=CPU异常"><i class="fab fa-stumbleupon fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://digg.com/submit?url=https://longfangsong.github.io/2019/02/12/CPU异常/&title=CPU异常"><i class="fab fa-digg fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://www.tumblr.com/share/link?url=https://longfangsong.github.io/2019/02/12/CPU异常/&name=CPU异常&description="><i class="fab fa-tumblr fa-lg" aria-hidden="true"></i></a></li>
+</ul>
+
+    </div>
+
+    <div id="actions-footer">
+        <a id="menu" class="icon" href="#" onclick="$('#nav-footer').toggle();return false;"><i class="fas fa-bars fa-lg" aria-hidden="true"></i> Menu</a>
+        <a id="toc" class="icon" href="#" onclick="$('#toc-footer').toggle();return false;"><i class="fas fa-list fa-lg" aria-hidden="true"></i> TOC</a>
+        <a id="share" class="icon" href="#" onclick="$('#share-footer').toggle();return false;"><i class="fas fa-share-alt fa-lg" aria-hidden="true"></i> Share</a>
+        <a id="top" style="display:none" class="icon" href="#" onclick="$('html, body').animate({ scrollTop: 0 }, 'fast');"><i class="fas fa-chevron-up fa-lg" aria-hidden="true"></i> Top</a>
+    </div>
+
+  </div>
+</div>
+
+        
+        <footer id="footer">
+  <div class="footer-left">
+    Copyright &copy; 2019 Philipp Oppermann, translation into Chinese by 龙方淞
+  </div>
+  <!-- <div class="footer-right">
+    <nav>
+      <ul> -->
+        <!--  
+          <li><a href="/Writing_an_OS_in_Rust_zh/">Home</a></li>
+         
+          <li><a href="/Writing_an_OS_in_Rust_zh/about/">About</a></li>
+         
+          <li><a href="/Writing_an_OS_in_Rust_zh/archives/">Writing</a></li>
+         
+          <li><a href="/Writing_an_OS_in_Rust_zh/projects_url">Projects</a></li>
+         -->
+      <!-- </ul>
+    </nav>
+  </div> -->
+</footer>
+
+    </div>
+</body>
+</html>
+<!-- styles -->
+<link rel="stylesheet" href="/Writing_an_OS_in_Rust_zh/lib/font-awesome/css/all.min.css">
+<link rel="stylesheet" href="/Writing_an_OS_in_Rust_zh/lib/justified-gallery/css/justifiedGallery.min.css">
+
+<!-- jquery -->
+<script src="/Writing_an_OS_in_Rust_zh/lib/jquery/jquery.min.js"></script>
+<script src="/Writing_an_OS_in_Rust_zh/lib/justified-gallery/js/jquery.justifiedGallery.min.js"></script>
+<script src="/Writing_an_OS_in_Rust_zh/js/main.js"></script>
+<!-- search -->
+
+<!-- Google Analytics -->
+
+<!-- Baidu Analytics -->
+
+<!-- Disqus Comments -->
+
+
