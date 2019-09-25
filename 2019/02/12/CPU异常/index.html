@@ -18,7 +18,7 @@
 <meta property="og:image" content="https://os.phil-opp.com/cpu-exceptions/exception-stack-frame.svg">
 <meta property="og:image" content="https://os.phil-opp.com/cpu-exceptions/qemu-breakpoint-exception.png">
 <meta property="og:image" content="https://www.pcper.com/files/imagecache/article_max_width/news/2018-04-27/stop-hitting-yourself-meme.jpg">
-<meta property="og:updated_time" content="2019-02-12T13:31:17.268Z">
+<meta property="og:updated_time" content="2019-02-12T13:31:17.000Z">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="CPU异常">
 <meta name="twitter:description" content="概述异常表示当前指令执行时碰到了问题。例如，如果当前指令试图除0，则CPU发出异常。当发生异常时，CPU会中断其当前工作并立即调用特定的异常处理函数，具体取决于异常类型。 在x86上有大约20种不同的CPU异常类型。最重要的是：  页面错误：非法内存访问发生页面错误。例如，如果当前指令尝试从未映射的页面读取或尝试写入只读页面。 无效操作码：当前指令无效时会发生此异常，例如，当我们尝试在不支持它们的">
@@ -77,6 +77,8 @@
     <br>
     <span id="actions">
       <ul>
+        
+        <li><a class="icon" href="/Writing_an_OS_in_Rust_zh/2019/09/25/实现分页/"><i class="fas fa-chevron-left" aria-hidden="true" onmouseover="$('#i-prev').toggle();" onmouseout="$('#i-prev').toggle();"></i></a></li>
         
         
         <li><a class="icon" href="/Writing_an_OS_in_Rust_zh/2019/02/01/高级分页/"><i class="fas fa-chevron-right" aria-hidden="true" onmouseover="$('#i-next').toggle();" onmouseout="$('#i-next').toggle();"></i></a></li>
@@ -339,7 +341,7 @@
 <h3 id="加载IDT"><a href="#加载IDT" class="headerlink" title="加载IDT"></a>加载IDT</h3><p>为了使用我们新的中断描述符表，我们需要使用<code>lidt</code>指令加载它。 <code>x86_64</code>的<code>InterruptDescriptorTable</code>结构为它提供了一个<code>load</code>函数。 我们试着用用它：</p>
 <figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// in src/interrupts.rs</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">pub</span> <span class="function"><span class="keyword">fn</span> <span class="title">init_idt</span></span>() &#123;</span><br><span class="line">    <span class="keyword">let</span> <span class="keyword">mut</span> idt = InterruptDescriptorTable::new();</span><br><span class="line">    idt.breakpoint.set_handler_fn(breakpoint_handler);</span><br><span class="line">    idt.load();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 <p>当我们尝试编译它时，会发生以下错误：</p>
-<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">error: `idt` does not live long enough</span><br><span class="line"><span class="meta">  --&gt;</span><span class="bash"> src/interrupts/mod.rs:43:5</span></span><br><span class="line">   |</span><br><span class="line">43 |     idt.load();</span><br><span class="line">   |     ^^^ does not live long enough</span><br><span class="line">44 | &#125;</span><br><span class="line">   | - borrowed value only lives until here</span><br><span class="line">   |</span><br><span class="line">   = note: borrowed value must be valid for the static lifetime...</span><br></pre></td></tr></table></figure>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">error: `idt` does not live long enough</span><br><span class="line"><span class="meta">  --&gt;</span> src/interrupts/mod.rs:43:5</span><br><span class="line">   |</span><br><span class="line">43 |     idt.load();</span><br><span class="line">   |     ^^^ does not live long enough</span><br><span class="line">44 | &#125;</span><br><span class="line">   | - borrowed value only lives until here</span><br><span class="line">   |</span><br><span class="line">   = note: borrowed value must be valid for the static lifetime...</span><br></pre></td></tr></table></figure>
 <p>看来<code>load</code>方法需要一个 <code>&amp;&#39;static self</code>，这是一个在程序的整个运行过程中都有效的引用。原因是CPU将在每次中断时访问此表，直到我们加载不同的IDT。因此，使用比<code>&#39;static</code>更短的生命周期可能导致免费使用后的错误。</p>
 <p>事实上，这正是这里发生的事情。我们的<code>idt</code>是在堆栈上创建的，所以它只在<code>init</code>函数中有效。之后堆栈被其他函数使用了，因此CPU会将不知道是啥的堆栈空间解释为IDT。幸运的是，<code>InterruptDescriptorTable::load</code>方法在其函数定义中对此生命周期要求进行编码，以便Rust编译器能够在编译时防止这种可能的错误。</p>
 <p>为了解决这个问题，我们需要将<code>idt</code>存储在具有<code>&#39;static</code>生命周期的地方。为了实现这一点，我们可以使用<code>Box</code>在堆上分配IDT，然后将其转换为<code>&#39;static</code>引用，但我们正在编写OS内核，因此没有堆（暂时）。</p>

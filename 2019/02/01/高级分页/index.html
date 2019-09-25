@@ -29,7 +29,7 @@
 <meta property="og:image" content="https://d33wubrfki0l68.cloudfront.net/55d00a7a89ddaf126f40bb1414de0d78fcde09e4/478a7/paging-introduction/x86_64-table-indices-from-address.svg">
 <meta property="og:image" content="https://os.phil-opp.com/advanced-paging/qemu-translate-addr.png">
 <meta property="og:image" content="https://os.phil-opp.com/advanced-paging/qemu-new-mapping.png">
-<meta property="og:updated_time" content="2019-02-01T13:49:33.348Z">
+<meta property="og:updated_time" content="2019-02-01T13:49:33.000Z">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="高级分页">
 <meta name="twitter:description" content="简介在上一篇文章中，我们了解了分页的原理以及x86_64上4级页表的工作原理。我们还发现引导加载程序已经为我们的内核设置了页表层次结构，这意味着我们的内核已经在虚拟地址上运行。这提高了安全性，因为非法内存访问会导致页面错误异常，而不是修改任意物理内存。 但是，当我们尝试从内核访问页表时会出现问题，因为我们无法直接访问存储在页表条目或CR3寄存器中的物理地址。当我们尝试检查活动页表时，我们在上一篇文">
